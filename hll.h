@@ -3,7 +3,11 @@
 #include "common.h"
 
 // Miscellaneous math utilities
-namespace sketch { namespace hll { namespace detail {
+namespace sketch { namespace hll {
+
+using TallyType = std::array<uint32_t, 64>;
+
+namespace detail {
 
 // Based off https://github.com/oertl/hyperloglog-sketch-estimation-paper/blob/master/c%2B%2B/cardinality_estimation.hpp
 template<typename FloatType>
@@ -79,8 +83,8 @@ namespace detail {
 template<typename T>
 static double ertl_ml_estimate(const T& c, unsigned p, unsigned q, double relerr=1e-2); // forward declaration
 template<typename Container>
-inline std::array<uint64_t, 64> sum_counts(const Container &con);
-}
+inline TallyType sum_counts(const Container &con);
+} // namespace detail
 #if VERIFY_SIMD_JOINT
 /*
  *Returns the estimated number of elements:
@@ -90,7 +94,7 @@ inline std::array<uint64_t, 64> sum_counts(const Container &con);
  * size of the union is [0] + [1] + [2]
  * size of the intersection is [2]
  */
-std::string counts2str(const std::array<uint64_t, 64> &arr) {
+std::string counts2str(const TallyType &arr) {
     std::string ret;
     for(const auto el: arr) {
         ret += std::to_string(el);
@@ -114,9 +118,9 @@ std::array<double, 3> ertl_joint_simple(const HllType &h1, const HllType &h2) {
     //const double cBX = hl2.creport();
     auto tmph = h1 + h2;
     const double cABX = tmph.report();
-    std::array<uint64_t, 64> countsAXBhalf{0}, countsBXAhalf{0};
+    TallyType countsAXBhalf{0}, countsBXAhalf{0};
     countsAXBhalf[q] = countsBXAhalf[q] = h1.m();
-    std::array<uint64_t, 64> cg1{0}, cg2{0}, ceq{0};
+    TallyType cg1{0}, cg2{0}, ceq{0};
     {
         const auto &core1(h1.core()), &core2(h2.core());
         for(uint64_t i(0); i < core1.size(); ++i) {
@@ -176,7 +180,7 @@ template<typename CountArrType>
 inline double calculate_estimate(const CountArrType &counts,
                                  EstimationMethod estim, uint64_t m, uint32_t p, double alpha, double relerr=1e-2) {
     assert(estim <= 3 && estim >= 0);
-    static_assert(std::is_same<std::decay_t<decltype(counts[0])>, uint64_t>::value, "Counts must be a container for uint64_ts.");
+    static_assert(std::is_same<std::decay_t<decltype(counts[0])>, uint32_t>::value, "Counts must be a container for uint32_ts.");
 #if ENABLE_COMPUTED_GOTO
     static constexpr void *arr [] {&&ORREST, &&ERTL_IMPROVED_EST, &&ERTL_MLE_EST};
     goto *arr[estim];
@@ -399,31 +403,103 @@ struct joint_unroller {
     }
 };
 
+using VSpace = vec::SIMDTypes<uint16_t>;
+using V = typename VSpace::VType;
+
 template<typename T>
-inline void inc_counts(T &counts, const SIMDHolder *p, const SIMDHolder *pend) {
-    static_assert(std::is_same<std::decay_t<decltype(counts[0])>, uint64_t>::value, "Counts must contain 64-bit integers.");
-    SIMDHolder tmp;
-    do {
-        tmp = *p++;
-        tmp.inc_counts(counts);
-    } while(p < pend);
+INLINE void increment_counts(V v, T &counts) {
+    // Maybe use a smaller counter, but flush to a large buffer every so often?
+    //std::fprintf(stderr, "Starting tha thing\n");
+    V mask = VSpace::set1(255u);
+#if 0
+    for(size_t i =0 ; i < sizeof(mask); ++i) {
+        std::fprintf(stderr, "byte in low mask %zu has value %u\n", i, *((uint8_t *)&mask + i));
+    }
+    mask.for_each([](auto x) {std::fprintf(stderr, "x: %u\n", uint32_t(x));});
+#endif
+    V lo = v.simd_ & mask.simd_;
+    mask = ~mask.simd_;
+    V hi = v.simd_ & mask.simd_;
+    uint16_t maxval = 0;
+#if 0
+    V zomg = hi.simd_ & lo.simd_;
+    zomg.for_each([](auto x) {assert(x == 0);});
+    for(size_t i =0 ; i < sizeof(hi); ++i) {
+        std::fprintf(stderr, "byte in high %zu has value %u\n", i, *((uint8_t *)&hi + i));
+        std::fprintf(stderr, "byte in high mask %zu has value %u\n", i, *((uint8_t *)&mask + i));
+    }
+    hi.for_each([&](auto x) {std::fprintf(stderr, "x: %u\n", uint32_t(x)); maxval = std::max(maxval, x);});
+#endif
+    hi = VSpace::srli(hi, 4);
+#if 0
+    std::fprintf(stderr, "First max: %u\n", maxval);
+    hi.for_each([](auto x) {std::fprintf(stderr, "shifted right: %u\n", uint32_t(x));});
+    maxval = 0;
+    hi.for_each([&](uint16_t v) {maxval = std::max(maxval, v);});
+    std::fprintf(stderr, "passed assertion. No shared bits. maxval in hi: %u\n", maxval);
+#endif
+    v = VSpace::or_fn(hi.simd_, lo.simd_);
+    //std::fprintf(stderr, "Middle of tha thing\n");
+    v.for_each([ptr=counts.data()](auto x) {
+        static_assert(sizeof(x) == sizeof(uint16_t), "Wrong size!"); // To ensure there's no conversion
+        assert(x < 4096);
+        ++ptr[x];
+    });
+    //std::fprintf(stderr, "Finish tha thing\n");
 }
 
-static inline std::array<uint64_t, 64> sum_counts(const SIMDHolder *p, const SIMDHolder *pend) {
+template<typename T>
+inline void inc_counts(T &counts, const VType *p, const VType *pend) {
+    static_assert(std::is_same<std::decay_t<decltype(counts[0])>, uint32_t>::value, "Counts must contain 32-bit integers.");
+
+    std::array<uint32_t, 4096> local_counts{0};
+    const V *p16 = reinterpret_cast<const V *>(p), *pend16 = reinterpret_cast<const V *>(pend);
+    V tmp;
+    do {
+        tmp = *p16++;
+        increment_counts(tmp, local_counts);
+    } while(p16 < pend16);
+    uint32_t *newp = local_counts.data();
+    uint32_t lc;
+#if 0
+// Actually evaluate this python
+for i in range(64):
+    for j in range(64):
+        print("    lc = *newp++;\n    " + "counts[%i] += lc;\n    counts[%i] += lc;\n" % (i, j));
+#elif 0
+    for(uint32_t i = 0; i < 64; ++i) {
+// Actually evaluate this python
+for j in range(64):
+    print("        lc = *newp++;\n        " + "counts[i] += lc;\n        counts[%i] += lc;\n" % j);
+        
+    }
+#else
+    for(uint32_t i = 0; i < 64; ++i) {
+        for(uint32_t j = 0; j < 64; ++j) {
+            lc = *newp++;
+            assert(newp <= &local_counts[local_counts.size()]);
+            counts[i] += lc;
+            counts[j] += lc;
+        }
+    }
+#endif
+}
+
+static inline TallyType sum_counts(const VType *p, const VType *pend) {
     // Should add Contiguous Container requirement.
-    std::array<uint64_t, 64> counts{0};
+    TallyType counts{0};
     inc_counts(counts, p, pend);
     return counts;
 }
 
 template<typename Container>
-inline std::array<uint64_t, 64> sum_counts(const Container &con) {
+inline TallyType sum_counts(const Container &con) {
     //static_assert(std::is_same<std::decay_t<decltype(con[0])>, uint8_t>::value, "Container must contain 8-bit unsigned integers.");
-    return sum_counts(reinterpret_cast<const SIMDHolder *>(&*std::cbegin(con)), reinterpret_cast<const SIMDHolder *>(&*std::cend(con)));
+    return sum_counts(reinterpret_cast<const VType *>(&*std::cbegin(con)), reinterpret_cast<const VType *>(&*std::cend(con)));
 }
-inline std::array<uint64_t, 64> sum_counts(const DefaultCompactVectorType &con) {
+inline TallyType sum_counts(const DefaultCompactVectorType &con) {
     // TODO: add a check to make sure that it's doing it right
-    return sum_counts(reinterpret_cast<const SIMDHolder *>(con.get()), reinterpret_cast<const SIMDHolder *>(con.get() + con.bytes()));
+    return sum_counts(reinterpret_cast<const VType *>(con.get()), reinterpret_cast<const VType *>(con.get() + con.bytes()));
 }
 template<typename T, typename Container>
 inline void inc_counts(T &counts, const Container &con) {
@@ -537,15 +613,15 @@ std::array<double, 3> ertl_joint(const HllType &h1, const HllType &h2) {
     using detail::ertl_ml_estimate;
     auto p = h1.p();
     auto q = h1.q();
-    std::array<uint64_t, 64> c1{0}, c2{0}, cu{0}, ceq{0}, cg1{0}, cg2{0};
+    TallyType c1{0}, c2{0}, cu{0}, ceq{0}, cg1{0}, cg2{0};
     detail::joint_unroller ju;
     ju.sum_arrays(h1.core(), h2.core(), c1, c2, cu, cg1, cg2, ceq);
     const double cAX = h1.get_is_ready() ? h1.creport() : ertl_ml_estimate(c1, h1.p(), h1.q());
     const double cBX = h2.get_is_ready() ? h2.creport() : ertl_ml_estimate(c2, h2.p(), h2.q());
     const double cABX = ertl_ml_estimate(cu, h1.p(), h1.q());
     // std::fprintf(stderr, "Made initials: %lf, %lf, %lf\n", cAX, cBX, cABX);
-    std::array<uint64_t, 64> countsAXBhalf;
-    std::array<uint64_t, 64> countsBXAhalf;
+    TallyType countsAXBhalf;
+    TallyType countsBXAhalf;
     countsAXBhalf[q] = h1.m();
     countsBXAhalf[q] = h1.m();
     for(unsigned _q = 0; _q < q; ++_q) {
@@ -722,7 +798,7 @@ public:
 
     // Call sum to recalculate if you have changed contents.
     void sum() {
-        const auto counts(detail::sum_counts(core_)); // std::array<uint64_t, 64>
+        const auto counts(detail::sum_counts(core_)); // TallyType
         value_ = detail::calculate_estimate(counts, estim_, m(), np_, alpha());
         is_calculated_ = 1;
     }
@@ -1072,7 +1148,7 @@ public:
             using detail::SIMDHolder;
             assert(m() == other.m());
             using SType = typename SIMDHolder::SType;
-            std::array<uint64_t, 64> counts{0};
+            TallyType counts{0};
             // We can do this because we use an aligned allocator.
             const SType *p1(reinterpret_cast<const SType *>(data())), *p2(reinterpret_cast<const SType *>(other.data()));
             const SType *const pe(reinterpret_cast<const SType *>(&(*core().cend())));
@@ -1471,7 +1547,7 @@ public:
     // Attempt strength borrowing across hlls with different seeds
     double chunk_report() const {
         if(__builtin_expect((size() & (size() - 1)) == 0, 1)) {
-            std::array<uint64_t, 64> counts{0};
+            TallyType counts{0};
             for(const auto &hll: hlls_) detail::inc_counts(counts, hll.core());
             const auto diff = (sizeof(uint32_t) * CHAR_BIT - clz(uint32_t(size())) - 1);
             const auto new_p = hlls_[0].p() + diff;
@@ -1603,7 +1679,7 @@ public:
 #if NON_POW2
         if((size() & (size() - 1)) == 0) {
 #endif
-        std::array<uint64_t, 64> counts{0};
+        TallyType counts{0};
         detail::inc_counts(counts, core_);
         //const auto diff = (sizeof(uint32_t) * CHAR_BIT - clz((uint32_t)size()) - 1); Maybe do this instead of storing l2ns_?
         return detail::calculate_estimate(counts, estim_, core_.size(),
