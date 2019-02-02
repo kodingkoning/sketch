@@ -867,17 +867,28 @@ public:
     }
 
     INLINE void add(uint64_t hashval) {
-#ifndef NOT_THREADSAFE
-        for(const uint32_t index(hashval >> q()), lzt(clz(((hashval << 1)|1) << (np_ - 1)) + 1);
-            core_[index] < lzt;
-            __sync_bool_compare_and_swap(core_.data() + index, core_[index], lzt));
-#else
         const uint32_t index(hashval >> q());
         const uint8_t lzt(clz(((hashval << 1)|1) << (np_ - 1)) + 1);
+#ifndef NOT_THREADSAFE
+        while(core_[index] < lzt)
+            __sync_bool_compare_and_swap(core_.data() + index, core_[index], lzt);
+#else
         core_[index] = std::max(core_[index], lzt);
 #endif
 #if LZ_COUNTER
-        ++clz_counts_[clz(((hashval << 1)|1) << (np_ - 1)) + 1];
+        ++clz_counts_[core_[index]];
+#endif
+    }
+    INLINE void add_rem(uint64_t hashval) { // Add with remainder bits
+        const uint32_t index = hashval >> q();
+        uint32_t lzt = clz(((hashval << 1)|1) << (np_ - 1)) + 1;
+#ifndef NOT_THREADSAFE
+        lzt = (lzt << 2) | ((hashval >> (64 - lzt - 1)) & 0x3u);
+        while(core_[index] < lzt)
+            __sync_bool_compare_and_swap(core_.data() + index, core_[index], lzt);
+#else
+        const uint8_t rembits = (hashval >> (64 - lzt - 1)) & 0x3u; // 64 - clz(x) - 2 would be the right answer; we added one in the above line, so we subtract only 1
+        core_[index] = std::max(core_[index], (lzt << 2) | rembits);
 #endif
     }
 
