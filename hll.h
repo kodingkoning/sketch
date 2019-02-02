@@ -888,7 +888,7 @@ public:
             __sync_bool_compare_and_swap(core_.data() + index, core_[index], lzt);
 #else
         const uint8_t rembits = (hashval >> (64 - lzt - 1)) & 0x3u; // 64 - clz(x) - 2 would be the right answer; we added one in the above line, so we subtract only 1
-        core_[index] = std::max(core_[index], (lzt << 2) | rembits);
+        core_[index] = std::max(core_[index], uint8_t((lzt << 2) | rembits));
 #endif
     }
 
