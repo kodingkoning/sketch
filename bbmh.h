@@ -26,6 +26,16 @@ static int log_debug(const char *func, const char *filename, int line, const cha
 #    endif
 #endif
 
+#ifndef TMP_FINAL_DEF
+#define TMP_FINAL_DEF
+template<typename T, template<typename> typename Allocator>
+struct TmpFinalDiv {
+    double est;
+    size_t nb;
+    uint32_t b;
+    std::vector<T, Allocator<T>> core;
+};
+#endif
 
 namespace minhash {
 using namespace common;
@@ -107,7 +117,7 @@ static inline double harmonic_cardinality_estimate(std::vector<T, Allocator> &mi
 template<typename T, typename Allocator>
 static inline double harmonic_cardinality_estimate(const std::vector<T, Allocator> &minvec) {
     if(std::find(minvec.begin(), minvec.end(), detail::default_val<T>()) != minvec.end()) {
-        std::vector<T> tmp = minvec; // copy
+        std::vector<T, Allocator> tmp = minvec; // copy
         detail::densifybin(tmp);
         return harmonic_cardinality_estimate_impl(tmp);
     } // Else don't worry about it, just do the thing.
@@ -189,6 +199,13 @@ public:
         std::fprintf(stderr, "Initializing finalbb with %u for b and %u for p. Number of u64s: %zu. Total nbits: %zu\n", b, nbuckets, core_.size(), core_.size() * 64);
 #endif
     }
+    FinalDivBBitMinHash(double est, uint64_t nb, uint32_t b, std::vector<value_type, Allocator<value_type>> &&core):
+        est_cardinality_(est), nbuckets_(nb), b_(b), core_(std::move(core)) {
+#if !NDEBUG
+        std::fprintf(stderr, "Moving from pieces\n");
+#endif
+    }
+    FinalDivBBitMinHash(TmpFinalDiv<uint64_t, Allocator> &&tfd): FinalDivBBitMinHash(tfd.est, tfd.nb, tfd.b, std::move(tfd.core)) {}
     void free() {
         decltype(core_) tmp;
         std::swap(tmp, core_);
@@ -400,7 +417,7 @@ public:
 };
 
 template<typename T, typename Allocator>
-FinalDivBBitMinHash div_bbit_finalize(uint32_t b, const std::vector<T, Allocator> &core_ref, double cest=0.);
+FinalDivBBitMinHash div_bbit_finalize(uint32_t b, const std::vector<T, Allocator> &core_ref, double cest);
 
 
 
@@ -1013,6 +1030,7 @@ FinalBBitMinHash BBitMinHasher<T, Hasher>::finalize(uint32_t b, MHCardinalityMod
 
 template<typename T, typename Allocator>
 FinalDivBBitMinHash div_bbit_finalize(uint32_t b, const std::vector<T, Allocator> &core_ref, double est_v) {
+    // Set est_v to 0 to force an estimation method
     using detail::getnthbit;
     using detail::setnthbit;
     const double cest = est_v ? est_v : detail::harmonic_cardinality_estimate(core_ref);
@@ -1102,7 +1120,7 @@ FinalDivBBitMinHash DivBBitMinHasher<T, Hasher>::finalize(uint32_t b) const {
         ptr = &tmp;
     }
     const std::vector<T> &core_ref = *ptr;
-    return div_bbit_finalize<T>(b, core_ref);
+    return div_bbit_finalize<T>(b, core_ref, 0.);
 }
 
 

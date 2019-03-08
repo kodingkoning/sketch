@@ -27,3 +27,6 @@
 [submodule "xxHash"]
 	path = xxHash
 	url = https://github.com/Cyan4973/xxHash
+[submodule "bagminhash"]
+	path = bagminhash
+	url = https://github.com/dnbaker/bagminhash
