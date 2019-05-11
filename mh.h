@@ -3,6 +3,7 @@
 //#include <queue>
 #include "hll.h" // For common.h and clz functions
 #include "fixed_vector.h"
+#include "heap.h"
 
 /*
  * TODO: support minhash using sketch size and a variable number of hashes.
@@ -124,7 +125,7 @@ The sketch is the set of minimizers.
 
 */
 template<typename T,
-         typename Cmp=std::greater<T>,
+         typename Cmp=std::less<T>,
          typename Hasher=common::WangHash
         >
 struct RangeMinHash: public AbstractMinHash<T, Cmp> {
@@ -132,12 +133,21 @@ protected:
     Hasher hf_;
     Cmp cmp_;
     ///using HeapType = std::priority_queue<T, std::vector<T, Allocator<T>>>;
+#if USE_STD_SET
     std::set<T, Cmp> minimizers_; // using std::greater<T> so that we can erase from begin()
+#else
+    heap::ObjHeap<T, Cmp, Hasher> minimizers_;
+#endif
 
 public:
     using final_type = FinalRMinHash<T, Cmp>;
+#if USE_STD_SET
     RangeMinHash(size_t sketch_size, Hasher &&hf=Hasher(), Cmp &&cmp=Cmp()):
         AbstractMinHash<T, Cmp>(sketch_size), hf_(std::move(hf)), cmp_(std::move(cmp))
+#else
+    RangeMinHash(size_t sketch_size, Hasher &&hf=Hasher(), Cmp &&cmp=Cmp()):
+        AbstractMinHash<T, Cmp>(sketch_size), minimizers_(sketch_size, Hasher(hf_), cmp), hf_(std::move(hf)), cmp_(std::move(cmp))
+#endif
     {
     }
     RangeMinHash(std::string) {throw NotImplementedError("");}
@@ -169,8 +179,10 @@ public:
     }
     RangeMinHash &operator+=(const RangeMinHash &o) {
         minimizers_.insert(o.begin(), o.end());
+#if USE_STD_SET
         while(minimizers_.size() > this->ss_)
             minimizers_.erase(minimizers_.begin());
+#endif  /* otherwise, unneeded */
         return *this;
     }
     RangeMinHash operator+(const RangeMinHash &o) const {
@@ -192,11 +204,17 @@ public:
     auto rbegin() const {return minimizers_.rbegin();}
     auto rbegin() {return minimizers_.rbegin();}
     T max_element() const {
-#if 0
+#if USE_STD_SET
         for(const auto e: *this)
             assert(*begin() >= e);
-#endif
         return *begin();
+#else
+        if(std::is_same<Cmp, std::less<T>>::value) {
+            return *minimizers_.begin();
+        } else {
+            return *minimizers_.rbegin();
+        }
+#endif
     }
     T min_element() const {
         return *rbegin();
@@ -206,6 +224,7 @@ public:
         this->add(val);
     }
     INLINE void add(T val) {
+#if USE_STD_SET
         if(minimizers_.size() == this->ss_) {
             if(cmp_(max_element(), val)) {
                 minimizers_.insert(val);
@@ -213,6 +232,9 @@ public:
                     minimizers_.erase(minimizers_.begin());
             }
         } else minimizers_.insert(val);
+#else
+        minimizers_.addh(val);
+#endif
     }
     template<typename T2>
     INLINE void addh(T2 val) {
@@ -240,15 +262,24 @@ public:
     }
     template<typename Container>
     Container to_container() const {
+#if USE_STD_SET
         if(this->ss_ != size()) // If the sketch isn't full, add UINT64_MAX to the end until it is.
             minimizers_.resize(this->ss_, std::numeric_limits<uint64_t>::max());
-        return Container(std::rbegin(minimizers_), std::rend(minimizers_.end()));
+        return Container(std::rbegin(minimizers_), std::rend(minimizers_));
+#else
+        return Container(std::rbegin(minimizers_), std::rend(minimizers_));
+#endif
     }
     void clear() {
         decltype(minimizers_)().swap(minimizers_);
     }
     final_type finalize() const {
         std::vector<T> reta(minimizers_.begin(), minimizers_.end());
+        assert(reta.size() == minimizers_.size());
+        std::sort_heap(reta.begin(), reta.end(), cmp_);
+        if(std::is_same<Cmp, std::greater<T>>::value) {
+            std::reverse(reta.begin(), reta.end());
+        }
         reta.insert(reta.end(), this->ss_ - reta.size(), std::numeric_limits<uint64_t>::max());
         return final_type{std::move(reta)};
     }
@@ -271,6 +302,7 @@ struct FinalRMinHash {
     std::vector<T> first;
     using container_type = decltype(first);
     Cmp cmp;
+    using key_compare = Cmp;
     size_t intersection_size(const FinalRMinHash &o) const {
         return minhash::intersection_size(first, o.first, Cmp());
     }
@@ -323,7 +355,12 @@ struct FinalRMinHash {
     }
     double cardinality_estimate(MHCardinalityMode mode=ARITHMETIC_MEAN) const {
         // KMV estimate
-        double sum = (std::numeric_limits<T>::max() / double(this->max_element()) * first.size());
+        double sum;
+        if(std::is_same<Cmp, std::less<T>>::value) {
+            sum = (std::numeric_limits<T>::max() / double(this->max_element()) * first.size());
+        } else {
+            throw common::NotImplementedError("cardinality for > not implemented.");
+        }
         return sum;
     }
 #define I1DF if(++i1 == lsz) break
@@ -376,8 +413,12 @@ struct FinalRMinHash {
     void free() {
         decltype(first) tmp; std::swap(tmp, first);
     }
-    FinalRMinHash(std::vector<T> &&first): first(std::move(first)), cmp() {}
-    FinalRMinHash(FinalRMinHash &&o): first(std::move(o.first)), cmp(std::move(o.cmp)) {}
+    FinalRMinHash(std::vector<T> &&first): first(std::move(first)), cmp() {
+        assert(std::is_sorted(first.begin(), first.end()));
+    }
+    FinalRMinHash(FinalRMinHash &&o): first(std::move(o.first)), cmp(std::move(o.cmp)) {
+        assert(std::is_sorted(first.begin(), first.end()));
+    }
     ssize_t read(gzFile fp) {
         uint64_t sz;
         if(gzread(fp, &sz, sizeof(sz)) != sizeof(sz)) throw std::runtime_error("Failed to read");

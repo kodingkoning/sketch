@@ -31,9 +31,9 @@ using namespace mh;
 int main(int argc, char *argv[]) {
     KWiseHasherSet<4> zomg(100);
     std::fprintf(stderr, "hv for 133: %zu\n", size_t(zomg(133, 1)));
-    size_t nelem = argc == 1 ? 1000000: size_t(std::strtoull(argv[1], nullptr, 10));
+    size_t nelem = argc == 1 ? 100000: size_t(std::strtoull(argv[1], nullptr, 10));
     double olap_frac = argc < 3 ? 0.1: std::atof(argv[2]);
-    size_t ss = argc < 4 ? 11: size_t(std::strtoull(argv[3], nullptr, 10));
+    size_t ss = argc < 4 ? 10: size_t(std::strtoull(argv[3], nullptr, 10));
     RangeMinHash<uint64_t> rm1(1 << ss), rm2(1 << ss);
     CountingRangeMinHash<uint64_t> crhm(1 << ss), crhm2(1 << ss);
     //KthMinHash<uint64_t> kmh(30, 100);
@@ -61,8 +61,13 @@ int main(int argc, char *argv[]) {
         auto v = mt();
         rm2.addh(v);
     }
-    size_t is = intersection_size(rm1, rm2);
-    double ji = rm1.jaccard_index(rm2);
+    auto rmf1 = rm1.finalize(), rmf2 = rm2.finalize();
+    pc(rmf1);
+    pc(rmf2);
+    assert(std::is_sorted(rmf1.begin(), rmf1.end()));
+    assert(std::is_sorted(rmf2.begin(), rmf2.end()));
+    size_t is = intersection_size(rmf1, rmf2);
+    double ji = rmf1.jaccard_index(rmf2);
     std::fprintf(stderr, "sketch is: %zu. sketch ji: %lf. True: %lf\n", is, ji, true_ji);
     assert(std::abs(ji - true_ji) / true_ji < 0.1);
     is = intersection_size(rm1, rm1);

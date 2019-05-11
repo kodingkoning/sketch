@@ -45,6 +45,7 @@ class ObjHeap {
     const Cmp cmp_;
     const uint64_t m_;
 public:
+    using key_compare = Cmp;
     template<typename... Args>
     ObjHeap(size_t n, HashFunc &&hf=HashFunc(), Args &&...args): h_(std::move(hf)), cmp_(std::forward<Args>(args)...), m_(n) {
         core_.reserve(n);
@@ -74,6 +75,21 @@ public:
     void addh(const Obj &o) {
         ADDH_CORE()
     }
+    template<typename...Args>
+    void insert(Args &&...args) {this->addh(std::forward<Args>(args)...);}
+    template<typename It>
+    void insert(It i1, It i2) {
+        while(i1 != i2)
+            insert(*i1), ++i1;
+    }
+    auto begin() {return core_.begin();}
+    auto end()   {return core_.end();}
+    auto begin() const {return core_.begin();}
+    auto end()   const {return core_.end();}
+    auto rbegin() {return core_.rbegin();}
+    auto rend()   {return core_.rend();}
+    auto rbegin() const {return core_.rbegin();}
+    auto rend()   const {return core_.rend();}
 #undef ADDH_CORE
 #undef GET_LOCK_AND_CHECK
     size_t max_size() const {return m_;}
@@ -87,6 +103,7 @@ public:
         VecType ret; ret.reserve(size());
         for(auto v: core_)
             ret.push_back(v);
+        std::sort_heap(ret.begin(), ret.end(), [this](const auto &x, const auto &y) {return !cmp(x, y);});
         return ret;
     }
 };

@@ -24,6 +24,8 @@ using Space = vec::SIMDTypes<uint64_t>;
 // and can be inverted with irving_inv_hash.
 struct WangHash {
     template<typename...Args> WangHash(Args &&...args) {}
+    WangHash(const WangHash &) = default;
+    WangHash(WangHash &&) = default;
     INLINE auto operator()(uint64_t key) const {
           key = (~key) + (key << 21); // key = (key << 21) - key - 1;
           key = key ^ (key >> 24);
