@@ -107,6 +107,91 @@ public:
         return ret;
     }
 };
+template<typename Obj, typename Cmp=std::greater<Obj>, typename HashFunc=hash<Obj> >
+class ObjCountingHeap {
+#ifndef NOT_THREADSAFE
+#define GET_LOCK_AND_CHECK \
+            std::lock_guard<std::mutex> lock(mut_); \
+            if(core_.size() >= m_ && !cmp_(o, core_.front())) return;
+#else
+#define GET_LOCK_AND_CHECK
+#endif
+    std::vector<Obj> core_;
+    HashFunc h_;
+    using HType = uint64_t;
+    ska::flat_hash_map<HType> hashes_;
+#ifndef NOT_THREADSAFE
+    std::mutex mut_;
+#endif
+    const Cmp cmp_;
+    const uint64_t m_;
+public:
+    using key_compare = Cmp;
+    template<typename... Args>
+    ObjCountingHeap(size_t n, HashFunc &&hf=HashFunc(), Args &&...args): h_(std::move(hf)), cmp_(std::forward<Args>(args)...), m_(n) {
+        core_.reserve(n);
+    }
+#define ADDH_CORE(op)\
+        using std::to_string;\
+        auto hv = h_(o);\
+        if((core_.size() < m_ || cmp_(o, core_[0]))) { \
+            auto it = hashes_.find(hv);\
+            if(it != hashes_.end()) {\
+                ++it->second;\
+                return;\
+            } \
+            GET_LOCK_AND_CHECK\
+            hashes_.emplace(hv);\
+            core_.emplace_back(op(o));\
+            std::push_heap(core_.begin(), core_.end(), cmp_);\
+            if(core_.size() > m_) {\
+                std::pop_heap(core_.begin(), core_.end(), cmp_);\
+                hashes_.erase(hashes_.find(h_(core_.back()))); \
+                core_.pop_back();\
+            }\
+        }
+    void addh(Obj &&o) {
+        ADDH_CORE(std::move)
+    }
+    void addh(const Obj &o) {
+        ADDH_CORE()
+    }
+    uint64_t score_hash(const Obj &o) {return score_hash(hash(o));}
+    template<typename=std::enable_if_t<std::is_same<Obj, uint64_t>::value>>
+    uint64_t score_hash(uint64_t x) {auto it = hashes_.find(x); if(it == hashes_.end()) return 0; return it->second;}
+    template<typename...Args>
+    void insert(Args &&...args) {this->addh(std::forward<Args>(args)...);}
+    template<typename It>
+    void insert(It i1, It i2) {
+        while(i1 != i2)
+            insert(*i1), ++i1;
+    }
+    auto begin() {return core_.begin();}
+    auto end()   {return core_.end();}
+    auto begin() const {return core_.begin();}
+    auto end()   const {return core_.end();}
+    auto rbegin() {return core_.rbegin();}
+    auto rend()   {return core_.rend();}
+    auto rbegin() const {return core_.rbegin();}
+    auto rend()   const {return core_.rend();}
+#undef ADDH_CORE
+#undef GET_LOCK_AND_CHECK
+    size_t max_size() const {return m_;}
+    size_t size() const {return core_.size();}
+    template<typename Func>
+    void for_each(const Func &func) const {
+        std::for_each(core_.begin(), core_.end(), func);
+    }
+    template<typename VecType=std::vector<Obj, Allocator<Obj>>>
+    VecType to_container() const {
+        VecType ret; ret.reserve(size());
+        for(auto v: core_)
+            ret.push_back(v);
+        std::sort_heap(ret.begin(), ret.end(), [this](const auto &x, const auto &y) {return !cmp(x, y);});
+        return ret;
+    }
+};
+
 template<typename HashType, typename Cmp>
 struct HashCmp {
     const HashType hash_;
@@ -117,6 +202,8 @@ struct HashCmp {
         return cmp_(hash_(a), hash_(b));
     }
 };
+
+
 template<typename Obj, typename Cmp=std::greater<Obj>, typename HashFunc=hash<Obj> >
 class ObjHashHeap: public ObjHeap<Obj, HashCmp<HashFunc, Cmp>, HashFunc> {
 public:

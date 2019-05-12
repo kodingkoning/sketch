@@ -493,10 +493,9 @@ class CountingRangeMinHash: public AbstractMinHash<T, Cmp> {
 #if USE_STD_SET
     std::set<VType> minimizers_; // using std::greater<T> so that we can erase from begin()
 #else
-    heap::ObjHeap<VType, Cmp, Hasher> minimizers_;
+    heap::ObjCountingHeap<VType, Cmp, Hasher, CountType> minimizers_;
 #endif
 public:
-#define INIT_HEAP(n, x) minimizers_(n, Hasher(x), 
     const auto &min() const {return minimizers_;}
     using size_type = CountType;
     using final_type = FinalCRMinHash<T, Cmp, CountType>;
