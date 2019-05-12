@@ -85,7 +85,7 @@ int main(int argc, char *argv[]) {
     std::fprintf(stderr, "is/jaccard: %zu/%lf. hist intersect: %lf.\n", size_t(crhm.intersection_size(crhm2)), crhm.jaccard_index(crhm2), crhm.histogram_intersection(crhm2));
     auto f1 = crhm.finalize();
     auto f2 = crhm2.finalize();
-    std::fprintf(stderr, "crhm sum/sumsq: %zu/%zu\n", size_t(crhm.sum()), size_t(crhm.sum_sq()));
+    //std::fprintf(stderr, "crhm sum/sumsq: %zu/%zu\n", size_t(crhm.sum()), size_t(crhm.sum_sq()));
     //std::fprintf(stderr, "rmh1 b: %lf. rmh1 rb: %lf. max: %lf. min: %lf\n", size_t(-1)/double(*rm1.begin()) * rm1.size(), size_t(-1)/double(*rm2.rbegin()) * rm1.size(), size_t(-1)/double(rm1.max_element()) * rm1.size(), size_t(-1)/double(rm1.min_element()) * rm1.size());
     std::fprintf(stderr, "rmh1 est card: %lf\n", rm1.cardinality_estimate());
     std::fprintf(stderr, "rmf1 est card: %lf\n", rmf1.cardinality_estimate());

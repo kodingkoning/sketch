@@ -107,22 +107,12 @@ public:
         return ret;
     }
 };
-template<typename Obj, typename Cmp=std::greater<Obj>, typename HashFunc=hash<Obj> >
+template<typename Obj, typename Cmp=std::greater<Obj>, typename HashFunc=hash<Obj>, typename CountType=::std::uint32_t>
 class ObjCountingHeap {
-#ifndef NOT_THREADSAFE
-#define GET_LOCK_AND_CHECK \
-            std::lock_guard<std::mutex> lock(mut_); \
-            if(core_.size() >= m_ && !cmp_(o, core_.front())) return;
-#else
-#define GET_LOCK_AND_CHECK
-#endif
     std::vector<Obj> core_;
     HashFunc h_;
     using HType = uint64_t;
-    ska::flat_hash_map<HType> hashes_;
-#ifndef NOT_THREADSAFE
-    std::mutex mut_;
-#endif
+    ska::flat_hash_map<HType, CountType> hashes_;
     const Cmp cmp_;
     const uint64_t m_;
 public:
@@ -140,8 +130,8 @@ public:
                 ++it->second;\
                 return;\
             } \
-            GET_LOCK_AND_CHECK\
-            hashes_.emplace(hv);\
+            /*GET_LOCK_AND_CHECK*/\
+            hashes_.emplace(hv, 1);\
             core_.emplace_back(op(o));\
             std::push_heap(core_.begin(), core_.end(), cmp_);\
             if(core_.size() > m_) {\
@@ -156,9 +146,9 @@ public:
     void addh(const Obj &o) {
         ADDH_CORE()
     }
-    uint64_t score_hash(const Obj &o) {return score_hash(hash(o));}
-    template<typename=std::enable_if_t<std::is_same<Obj, uint64_t>::value>>
-    uint64_t score_hash(uint64_t x) {auto it = hashes_.find(x); if(it == hashes_.end()) return 0; return it->second;}
+    uint64_t score_hash(const Obj &o) const {return get_count(h_(o));}
+    //template<typename=std::enable_if_t<!std::is_same<Obj, uint64_t>::value>>
+    uint64_t get_count(uint64_t x) const {auto it = hashes_.find(x); if(it == hashes_.end()) return 0; return it->second;}
     template<typename...Args>
     void insert(Args &&...args) {this->addh(std::forward<Args>(args)...);}
     template<typename It>
@@ -285,9 +275,10 @@ public:
     size_t size() const {return core_.size();}
     size_t max_size() const {return m_;}
 };
+
+
 template<typename Obj, typename HashFunc=hash<Obj>, typename ScoreType=std::uint64_t, typename MainCmp=DefaultScoreCmp<ScoreType>>
-class ObjPtrScoreHeap: public ObjScoreHeap<Obj, HashFunc, ScoreType, MainCmp> {
-};
+class ObjPtrScoreHeap: public ObjScoreHeap<Obj, HashFunc, ScoreType, MainCmp> {};
 
 template<typename CSketchType>
 struct SketchCmp {
@@ -340,7 +331,6 @@ public:
         auto hv = h_(o);\
         if(core_.size() < m_ || cmp_.add_cmp(o, core_[0])) {\
             if(hashes_.find(hv) != hashes_.end()) {\
-                /*std::fprintf(stderr, "Found hash: %zu\n", size_t(*hashes_.find(hv))); */\
                 return;\
             }\
             GET_LOCK_AND_CHECK\

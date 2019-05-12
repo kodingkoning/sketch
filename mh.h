@@ -471,6 +471,7 @@ template<typename T,
          typename CountType=uint32_t
         >
 class CountingRangeMinHash: public AbstractMinHash<T, Cmp> {
+#if 1
     struct VType {
         T first;
         mutable CountType second;
@@ -487,13 +488,14 @@ class CountingRangeMinHash: public AbstractMinHash<T, Cmp> {
         VType(const VType &o): first(o.first), second(o.second) {}
         VType(gzFile fp) {if(gzread(fp, this, sizeof(*this)) != sizeof(*this)) throw 1;}
     };
+#endif
     Hasher hf_;
     Cmp cmp_;
     CountType cached_sum_sq_ = 0, cached_sum_ = 0;
 #if USE_STD_SET
     std::set<VType> minimizers_; // using std::greater<T> so that we can erase from begin()
 #else
-    heap::ObjCountingHeap<VType, Cmp, Hasher, CountType> minimizers_;
+    heap::ObjCountingHeap<T, Cmp, Hasher, CountType> minimizers_;
 #endif
 public:
     const auto &min() const {return minimizers_;}
@@ -510,7 +512,7 @@ public:
     auto rend() const {return minimizers_.rend();}
     const auto &core() const {return minimizers_;}
     CountingRangeMinHash(size_t n, Hasher &&hf=Hasher(), Cmp &&cmp=Cmp()): AbstractMinHash<T, Cmp>(n), hf_(std::move(hf)), cmp_(cmp), minimizers_(n, Hasher(hf_), cmp) {}
-    CountingRangeMinHash(std::string s): CountingRangeMinHash(0), minimizers_(0) {throw NotImplementedError("");}
+    CountingRangeMinHash(std::string s): AbstractMinHash<T, Cmp>(0), hf_(std::move(Hasher())), minimizers_(0, Hasher(), Cmp()) {throw NotImplementedError("");}
     double cardinality_estimate(MHCardinalityMode mode=ARITHMETIC_MEAN) const {
         return double(std::numeric_limits<T>::max()) / std::max_element(minimizers_.begin(), minimizers_.end(), [](auto x, auto y) {return x.first < y.first;})->first * minimizers_.size();
     }
@@ -526,7 +528,6 @@ public:
             }
         } else minimizers_.insert(VType(val, CountType(1)));
 #else
-        if(minimizers_.
         minimizers_.addh(val);
 #endif
     }
@@ -537,10 +538,14 @@ public:
     auto max_element() const {
         return minimizers_.begin()->first;
     }
+#if USE_STD_SET
     auto sum_sq() {return cached_sum_sq_ ? cached_sum_sq_: (cached_sum_sq_ = std::accumulate(std::next(this->begin()), this->end(), this->begin()->second * this->begin()->second, [](auto s, const VType &x) {return s + x.second * x.second;}));}
     auto sum_sq() const {return cached_sum_sq_;}
-    auto sum() {return cached_sum_ ? cached_sum_ : (cached_sum_ = std::accumulate(std::next(this->begin()), this->end(), this->begin()->second, [](auto s, const VType &x) {return s + x.second;}));}
+    auto sum() {
+        return cached_sum_ ? cached_sum_ : (cached_sum_ = std::accumulate(std::next(this->begin()), this->end(), this->begin()->second, [](auto s, const VType &x) {return s + x.second;}));
+    }
     auto sum() const {return cached_sum_;}
+#endif
     double histogram_intersection(const CountingRangeMinHash &o) const {
 #if USE_STD_SET
         assert(o.size() == size());
@@ -643,7 +648,15 @@ public:
 #endif
     }
     final_type finalize() const {
-        return FinalCRMinHash<T, Cmp, CountType>(*this);
+        std::vector<VType> vec;
+        for(auto v: minimizers_)
+            vec.emplace_back(v, minimizers_.score_hash(v));
+        std::sort(vec.begin(), vec.end());
+        std::vector<T> first(vec.size());
+        std::vector<CountType> second(vec.size());
+        for(size_t i = 0; i < vec.size(); ++i)
+            first[i] = vec[i].first, second[i] = vec[i].second;
+        return FinalCRMinHash<T, Cmp, CountType>(std::move(first), std::move(second));
     }
     template<typename Func>
     void for_each(const Func &func) const {
@@ -662,10 +675,18 @@ public:
     }
     template<typename C2>
     size_t intersection_size(const C2 &o) const {
-        return minhash::intersection_size(o, *this, [&](auto &x, auto &y) {return cmp_(x.first, y.first);});
+#if USE_STD_SET
+        return  minhash::intersection_size(o, *this, [&](auto &x, auto &y) {return cmp_(x.first, y.first);});
+#else
+        return  minhash::intersection_size(o, *this, [&](const auto &x, const auto &y) {return !cmp_(x, y);});
+#endif
     }
     size_t intersection_size(const CountingRangeMinHash &o) const {
+#if USE_STD_SET
         return  minhash::intersection_size(o, *this, [&](auto &x, auto &y) {return cmp_(x.first, y.first);});
+#else
+        return  minhash::intersection_size(o, *this, [&](const auto &x, const auto &y) {return !cmp_(x, y);});
+#endif
     }
     template<typename C2>
     double jaccard_index(const C2 &o) const {
@@ -806,6 +827,7 @@ struct FinalCRMinHash: public FinalRMinHash<T, Cmp> {
         std::sort(min.begin(), min.end());
         for(const auto &pair: min)
             this->first.push_back(pair.first), this->second.push_back(pair.second);
+        assert(std::is_sorted(this->first.begin(), this->first.end()));
 #endif
         count_sum_ = countsum();
         count_sum_sq_ = std::sqrt(countsumsq());
