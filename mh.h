@@ -357,9 +357,12 @@ struct FinalRMinHash {
         // KMV estimate
         double sum;
         if(std::is_same<Cmp, std::less<T>>::value) {
+            sum = (std::numeric_limits<T>::max() / double(this->min_element()) * first.size());
+        } else if(std::is_same<Cmp, std::greater<T>>::value) {
             sum = (std::numeric_limits<T>::max() / double(this->max_element()) * first.size());
+            //sum = (std::numeric_limits<T>::max() / double(std::numeric_limits<T>::min() - this->max_element()) * first.size());
         } else {
-            throw common::NotImplementedError("cardinality for > not implemented.");
+            throw common::NotImplementedError(std::string("cardinality for > not implemented for ") + __PRETTY_FUNCTION__);
         }
         return sum;
     }
@@ -416,9 +419,7 @@ struct FinalRMinHash {
     FinalRMinHash(std::vector<T> &&first): first(std::move(first)), cmp() {
         assert(std::is_sorted(first.begin(), first.end()));
     }
-    FinalRMinHash(FinalRMinHash &&o): first(std::move(o.first)), cmp(std::move(o.cmp)) {
-        assert(std::is_sorted(first.begin(), first.end()));
-    }
+    FinalRMinHash(FinalRMinHash &&o): FinalRMinHash(std::move(o.first)) {}
     ssize_t read(gzFile fp) {
         uint64_t sz;
         if(gzread(fp, &sz, sizeof(sz)) != sizeof(sz)) throw std::runtime_error("Failed to read");
@@ -437,8 +438,14 @@ struct FinalRMinHash {
     DBSKETCH_READ_STRING_MACROS
     DBSKETCH_WRITE_STRING_MACROS
     auto max_element() const {
-        assert(std::accumulate(first.begin(), first.end(), true, [&](bool t, auto v) {return t && *first.begin() >= v;}));
+        //std::fprintf(stderr, "max element: %zu\n", size_t(*first.begin()));
+        //for(const auto c: first) std::fprintf(stderr, "element %zu. el / 1<<64: %0.12le. (1 - el) / 1 << 64: %0.12le\n", size_t(c), std::ldexp(c, -64), std::ldexp((std::ldexp(1, 64) - c), -64));
         return *first.begin();
+    }
+    auto min_element() const {
+        //std::fprintf(stderr, "max element: %zu\n", size_t(*first.begin()));
+        //for(const auto c: first) std::fprintf(stderr, "element %zu. el / 1<<64: %0.12le. (1 - el) / 1 << 64: %0.12le\n", size_t(c), std::ldexp(c, -64), std::ldexp((std::ldexp(1, 64) - c), -64));
+        return *first.rbegin();
     }
     template<typename Hasher>
     FinalRMinHash(RangeMinHash<T, Cmp, Hasher> &&prefinal): FinalRMinHash(std::move(prefinal.finalize())) {
@@ -483,8 +490,13 @@ class CountingRangeMinHash: public AbstractMinHash<T, Cmp> {
     Hasher hf_;
     Cmp cmp_;
     CountType cached_sum_sq_ = 0, cached_sum_ = 0;
+#if USE_STD_SET
     std::set<VType> minimizers_; // using std::greater<T> so that we can erase from begin()
+#else
+    heap::ObjHeap<VType, Cmp, Hasher> minimizers_;
+#endif
 public:
+#define INIT_HEAP(n, x) minimizers_(n, Hasher(x), 
     const auto &min() const {return minimizers_;}
     using size_type = CountType;
     using final_type = FinalCRMinHash<T, Cmp, CountType>;
@@ -497,12 +509,14 @@ public:
     auto end() const {return minimizers_.end();}
     auto rend() {return minimizers_.rend();}
     auto rend() const {return minimizers_.rend();}
-    CountingRangeMinHash(size_t n, Hasher &&hf=Hasher(), Cmp &&cmp=Cmp()): AbstractMinHash<T, Cmp>(n), hf_(std::move(hf)), cmp_(std::move(cmp)) {}
-    CountingRangeMinHash(std::string s): CountingRangeMinHash(0) {throw NotImplementedError("");}
+    const auto &core() const {return minimizers_;}
+    CountingRangeMinHash(size_t n, Hasher &&hf=Hasher(), Cmp &&cmp=Cmp()): AbstractMinHash<T, Cmp>(n), hf_(std::move(hf)), cmp_(cmp), minimizers_(n, Hasher(hf_), cmp) {}
+    CountingRangeMinHash(std::string s): CountingRangeMinHash(0), minimizers_(0) {throw NotImplementedError("");}
     double cardinality_estimate(MHCardinalityMode mode=ARITHMETIC_MEAN) const {
         return double(std::numeric_limits<T>::max()) / std::max_element(minimizers_.begin(), minimizers_.end(), [](auto x, auto y) {return x.first < y.first;})->first * minimizers_.size();
     }
     INLINE void add(T val) {
+#if USE_STD_SET
         if(minimizers_.size() == this->ss_) {
             if(cmp_(begin()->first, val)) {
                 auto it = minimizers_.find(VType(val, 0));
@@ -512,6 +526,10 @@ public:
                 } else ++it->second;
             }
         } else minimizers_.insert(VType(val, CountType(1)));
+#else
+        if(minimizers_.
+        minimizers_.addh(val);
+#endif
     }
     INLINE void addh(T val) {
         val = hf_(val);
@@ -525,6 +543,7 @@ public:
     auto sum() {return cached_sum_ ? cached_sum_ : (cached_sum_ = std::accumulate(std::next(this->begin()), this->end(), this->begin()->second, [](auto s, const VType &x) {return s + x.second;}));}
     auto sum() const {return cached_sum_;}
     double histogram_intersection(const CountingRangeMinHash &o) const {
+#if USE_STD_SET
         assert(o.size() == size());
         size_t denom = 0, num = 0;
         auto i1 = minimizers_.begin(), i2 = o.minimizers_.begin();
@@ -546,8 +565,12 @@ public:
             }
         }
         return static_cast<double>(num) / denom;
+#else
+        return this->finalize().histogram_intersection(o.finalize());
+#endif
     }
     double containment_index(const CountingRangeMinHash &o) const {
+#if USE_STD_SET
         assert(o.size() == size());
         size_t denom = 0, num = 0;
         auto i1 = minimizers_.begin(), i2 = o.minimizers_.begin();
@@ -566,6 +589,9 @@ public:
             }
         }
         return static_cast<double>(num) / denom;
+#else
+        return this->finalize().containment_index(o.finalize());
+#endif
     }
     DBSKETCH_WRITE_STRING_MACROS
     DBSKETCH_READ_STRING_MACROS
@@ -591,6 +617,7 @@ public:
     }
     template<typename WeightFn=weight::EqualWeight>
     double tf_idf(const CountingRangeMinHash &o, const WeightFn &fn) const {
+#if USE_STD_SET
         assert(o.size() == size());
         double denom = 0, num = 0;
         auto i1 = minimizers_.begin(), i2 = o.minimizers_.begin();
@@ -612,6 +639,9 @@ public:
 #undef I1DM
 #undef I2DM
         return static_cast<double>(num) / denom;
+#else
+        return this->finalize().tf_idf(o.finalize(), fn);
+#endif
     }
     final_type finalize() const {
         return FinalCRMinHash<T, Cmp, CountType>(*this);
@@ -761,6 +791,7 @@ struct FinalCRMinHash: public FinalRMinHash<T, Cmp> {
     }
     template<typename Hasher>
     FinalCRMinHash(const CountingRangeMinHash<T, Cmp, Hasher, CountType> &prefinal): FinalRMinHash<T,Cmp>() {
+#if USE_STD_SET
         this->first.reserve(prefinal.size());
         this->second.reserve(prefinal.size());
         for(const auto &pair: prefinal)
@@ -769,6 +800,14 @@ struct FinalCRMinHash: public FinalRMinHash<T, Cmp> {
             this->first.insert(this->first.end(), prefinal.sketch_size(), std::numeric_limits<T>::max());
             this->second.insert(this->second.end(), prefinal.sketch_size(), 0);
         }
+#else
+        this->first.reserve(prefinal.size());
+        this->second.reserve(prefinal.size());
+        auto min = prefinal.core();
+        std::sort(min.begin(), min.end());
+        for(const auto &pair: min)
+            this->first.push_back(pair.first), this->second.push_back(pair.second);
+#endif
         count_sum_ = countsum();
         count_sum_sq_ = std::sqrt(countsumsq());
     }

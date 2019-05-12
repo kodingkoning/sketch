@@ -69,6 +69,7 @@ int main(int argc, char *argv[]) {
     size_t is = intersection_size(rmf1, rmf2);
     double ji = rmf1.jaccard_index(rmf2);
     std::fprintf(stderr, "sketch is: %zu. sketch ji: %lf. True: %lf\n", is, ji, true_ji);
+    std::fprintf(stderr, "rmf1 cardinality estimate: %lf. True: %zu\n", rmf1.cardinality_estimate(), size_t(nelem - olap_n + olap_n));
     assert(std::abs(ji - true_ji) / true_ji < 0.1);
     is = intersection_size(rm1, rm1);
     ji = rm1.jaccard_index(rm1);
@@ -85,7 +86,10 @@ int main(int argc, char *argv[]) {
     auto f1 = crhm.finalize();
     auto f2 = crhm2.finalize();
     std::fprintf(stderr, "crhm sum/sumsq: %zu/%zu\n", size_t(crhm.sum()), size_t(crhm.sum_sq()));
-    std::fprintf(stderr, "rmh1 b: %zu. rmh1 rb: %zu. max: %zu. min: %zu\n", size_t(*rm1.begin()), size_t(*rm2.rbegin()), size_t(rm1.max_element()), size_t(rm1.min_element()));
+    //std::fprintf(stderr, "rmh1 b: %lf. rmh1 rb: %lf. max: %lf. min: %lf\n", size_t(-1)/double(*rm1.begin()) * rm1.size(), size_t(-1)/double(*rm2.rbegin()) * rm1.size(), size_t(-1)/double(rm1.max_element()) * rm1.size(), size_t(-1)/double(rm1.min_element()) * rm1.size());
+    std::fprintf(stderr, "rmh1 est card: %lf\n", rm1.cardinality_estimate());
+    std::fprintf(stderr, "rmf1 est card: %lf\n", rmf1.cardinality_estimate());
+    assert(std::abs(rm1.cardinality_estimate() / nelem - 1.) < 0.001);
     assert(f1.histogram_intersection(f2) == f2.histogram_intersection(f1) && f1.histogram_intersection(f2) == crhm.histogram_intersection(crhm2));
     assert(crhm.histogram_intersection(crhm2) ==  f1.tf_idf(f2));
     std::fprintf(stderr, "tf-idf with equal weights: %lf\n", f1.tf_idf(f2));
