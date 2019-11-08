@@ -33,9 +33,44 @@ enum Transform {
 //       4. Full matrix processing
 //
 
+struct CountApplicator {
+    template<typename VT, typename RNG=blaze::RNG>
+    VT apply(VT v, uint64_t rem) const {
+        return v * (rem & 1 ? 1: -1);
+    }
+    template<typename VT, typename RNG=blaze::RNG>
+    auto inverse(VT v, uint64_t rem) const {
+        return v * (rem & 1 ? 1: -1);
+    }
+};
 
-template<typename C, typename C2, typename Hasher=KWiseHasherSet<4>>
-auto &cs_compress(const C &in, C2 &ret, size_t newdim, const Hasher &hf) {
+template<typename Distribution>
+struct DistributionalApplicator {
+    mutable Distribution dist_;
+
+    using param_type = typename Distribution::param_type;
+    template<typename...Args>
+    DistributionalApplicator(Args &&...args): dist_(std::forward<Args>(args)...) {}
+
+    template<typename VT, typename RNG=blaze::RNG>
+    VT apply(VT val, uint64_t rem) {
+        wy::WyHash<uint64_t, 1> rng(rem >> 1);
+        auto mult = dist_(rng) * (rem & 1 ? 1.: -1.);
+        return val * mult;
+    }
+
+    template<typename VT, typename RNG=blaze::RNG>
+    auto inverse(VT v, uint64_t rem) {
+        wy::WyHash<uint64_t, 1> rng(rem >> 1);
+        auto mult = dist_(rng) * (rem & 1 ? 1.: -1.);
+        return v / mult;
+    }
+};
+struct WZApplicator: public DistributionalApplicator<std::exponential_distribution<double>> {};
+
+
+template<typename C, typename C2, typename Hasher, typename Applicator>
+auto &generic_compress(const C &in, C2 &ret, size_t newdim, const Hasher &hf, const Applicator &app) {
     if(newdim > in.size()) throw 1;
     std::fill(ret.begin(), ret.end(), static_cast<std::decay_t<decltype(ret[0])>>(0));
     PREC_REQ(newdim <= in.size(), "newdim cannot be larger");
@@ -44,17 +79,18 @@ auto &cs_compress(const C &in, C2 &ret, size_t newdim, const Hasher &hf) {
     PREC_REQ(ret.size() == newdim * ns, "out size doesn't match parameters");
     for(unsigned j = 0; j < ns; ++j) {
         for(unsigned i = 0; i < in.size(); ++i) {
-            const auto v = in[i];
+            auto v = in[i];
             auto hv = hf(i, j);
-            auto ind = div.mod(hv >> 1) * ns + j;
-            ret.operator[](ind) += v * (hv & 1 ? 1: -1);
+            auto dm = div.divmod(hv);
+            auto ind = dm.rem * ns + j;
+            ret[ind] += app.apply(v, dm.quot);
         }
     }
     return ret;
 }
 
-template<typename FT, typename C2, bool SO, typename Hasher=KWiseHasherSet<4>>
-auto &cs_compress(const blaze::CompressedVector<FT, SO> &in, C2 &ret, size_t newdim, const Hasher &hf=Hasher()) {
+template<typename FT, typename C2, bool SO, typename Hasher=KWiseHasherSet<4>, typename Applicator=CountApplicator>
+auto &generic_compress(const blaze::CompressedVector<FT, SO> &in, C2 &ret, size_t newdim, const Hasher &hf=Hasher(), const Applicator &applicator=Applicator()) {
     if(newdim > in.size()) throw 1;
     std::fill(ret.begin(), ret.end(), static_cast<std::decay_t<decltype(ret[0])>>(0));
     PREC_REQ(newdim <= in.size(), "newdim cannot be larger");
@@ -66,18 +102,27 @@ auto &cs_compress(const blaze::CompressedVector<FT, SO> &in, C2 &ret, size_t new
         const auto v = pair.value();
         for(unsigned j = 0; j < ns; ++j) {
             auto hv = hf(idx, j);
-            auto ind = div.mod(hv >> 1) * ns + j;
-            ret[ind] += v * (hv & 1 ? 1: -1);
+            auto dm = div.divmod(hv);
+            auto ind = dm.rem * ns + j;
+            ret[ind] += applicator.apply(v, dm.quot);
         }
     }
     return ret;
 }
 
+template<typename C, typename Hasher=KWiseHasherSet<4>, typename Applicator=CountApplicator>
+auto generic_compress(const C &in, size_t newdim, const Hasher &hf, const Applicator &applicator) {
+    C ret(newdim * hf.size());
+    generic_compress(in, ret, newdim, hf, applicator);
+    return ret;
+}
+template<typename C, typename C2, typename Hasher>
+auto &cs_compress(const C &in, C2 &ret, size_t newdim, const Hasher &hf) {
+    return generic_compress(in, ret, newdim, hf, CountApplicator());
+}
 template<typename C, typename Hasher=KWiseHasherSet<4>>
 auto cs_compress(const C &in, size_t newdim, const Hasher &hf) {
-    C ret(newdim * hf.size());
-    cs_compress(in, ret, newdim, hf);
-    return ret;
+    return generic_compress(in, newdim, hf, CountApplicator());
 }
 
 // Note: cs_compress could be a special case of wz_compress with Samplingist always returning 1
@@ -86,6 +131,8 @@ auto cs_compress(const C &in, size_t newdim, const Hasher &hf) {
 template<typename C, typename C2, typename Hasher=KWiseHasherSet<4>, typename SamplingDist=std::exponential_distribution<double>,
          typename RNG=blaze::RNG>
 auto &wz_compress(const C &in, C2 &out, size_t newdim, const Hasher &hf, double p) {
+    return generic_compress(in, out, newdim, hf, WZApplicator(p));
+#if 0
     //using FT = std::decay_t<decltype(*std::begin(in))>;
     std::fill(out.begin(), out.end(), static_cast<std::decay_t<decltype(out[0])>>(0));
     if(newdim > in.size()) throw 1;
@@ -106,11 +153,14 @@ auto &wz_compress(const C &in, C2 &out, size_t newdim, const Hasher &hf, double 
         // Sample using the same seed, just multiply by inverse
     }
     return out;
+#endif
 }
 
 template<typename FT, bool SO, typename C2, typename Hasher=KWiseHasherSet<4>, typename SamplingDist=std::exponential_distribution<double>,
          typename RNG=blaze::RNG>
 auto &wz_compress(const blaze::CompressedVector<FT> &in, C2 &out, size_t newdim, const Hasher &hf, double p) {
+    return generic_compress(in, out, newdim, hf, WZApplicator(p));
+#if 0
     //using FT = std::decay_t<decltype(*std::begin(in))>;
     std::fill(out.begin(), out.end(), static_cast<std::decay_t<decltype(out[0])>>(0));
     if(newdim > in.size()) throw 1;
@@ -131,6 +181,7 @@ auto &wz_compress(const blaze::CompressedVector<FT> &in, C2 &out, size_t newdim,
         // Sample using the same seed, just multiply by inverse
     }
     return out;
+#endif
 }
 
 template<typename C, typename C2=C, typename Hasher=KWiseHasherSet<4>, typename RNG=blaze::RNG>
