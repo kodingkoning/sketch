@@ -1,5 +1,5 @@
 .PHONY:all python clean mostlyclean
-CXX?=g++
+CXX=mpiCC # force mpi for C++
 CC?=gcc
 ifndef DBG
 DBG=-DNDEBUG
