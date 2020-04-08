@@ -1,7 +1,6 @@
-#include "bcl_mh.h"
+#include "mpi_mh.h"
 #include <random>
 #include <mpi.h>
-#include "bcl/bcl.hpp"
 
 template<typename T>
 int pc(const T &x, const char *s="unspecified") {
@@ -30,10 +29,9 @@ bool forward_sorted(T i1, T i2) {
 using namespace sketch;
 using namespace common;
 // using namespace mh;
-using namespace bcl_mh;
+using namespace mpi_mh;
 
 int main(int argc, char *argv[]) {
-    BCL::init(); // includes MPI_Init()
     // These tests are setup well for testing accuracy, but not for time
     double start_time, end_time, setup_time, fill_time, int_time, finalize_time;
     start_time = MPI_Wtime();
@@ -165,6 +163,4 @@ int main(int argc, char *argv[]) {
     //std::fprintf(stderr, "CRMH time = %f\n", crmh_time - int_time);
     std::fprintf(stderr, "Finalizing time = %f\n", finalize_time - int_time);
     std::fprintf(stderr, "Total test time = %f\n", end_time - start_time);
-
-    BCL::finalize();
 }
