@@ -1,11 +1,12 @@
 .PHONY:all python clean mostlyclean
-CXX=mpiCC # force mpi for C++
+CXX=mpic++ # force mpi for C++
 CC?=gcc
 ifndef DBG
 DBG=-DNDEBUG
 else
 DBG=
 endif
+BCL_INCLUDES=-I../bcl/bcl -I../bcl 
 WARNINGS=-Wall -Wextra -Wno-char-subscripts \
 		 -Wpointer-arith -Wwrite-strings -Wdisabled-optimization \
 		 -Wformat -Wcast-align -Wno-unused-function -Wno-unused-parameter \
@@ -15,7 +16,7 @@ WARNINGS=-Wall -Wextra -Wno-char-subscripts \
 FLAGS=-O3 -funroll-loops -pipe -march=native -Iinclude/sketch -I. -Ivec/blaze -Ivec -Ipybind11/include -Iinclude -fpic -Wall $(WARNINGS) \
      -fno-strict-aliasing \
       -DXXH_INLINE_ALL  \
-	  -Wno-attributes -Wno-pragmas -Wno-ignored-qualifiers
+	  -Wno-attributes -Wno-pragmas -Wno-ignored-qualifiers $(BCL_INCLUDES)
 
 CXXFLAGS=$(FLAGS) -Wreorder  \
 
@@ -36,11 +37,11 @@ all: $(EX)
 setup_tests: $(EX) lztest
 	echo $(EX) lztest > tmpfiles.txt
 
-STD?= -std=c++14
+STD?= -std=c++17
 
 CCBIN?=-ccbin=clang++
 
-GPUFLAGS= $(CCBIN) -O3 -std=c++14 -Iinclude -I. -Xcompiler -march=native -Xcompiler -fopenmp
+GPUFLAGS= $(CCBIN) -O3 -std=c++17 -Iinclude -I. -Xcompiler -march=native -Xcompiler -fopenmp
 
 INCLUDES=-I`$(PYCONF) --includes` -Ipybind11/include
 SUF=`$(PYCONF) --extension-suffix`
@@ -70,7 +71,7 @@ hpython: pybbmh.cpython.so
 	$(CC) -c $(FLAGS)	$< -o $@
 
 %: testsrc/%.cpp kthread.o $(HEADERS)
-	$(CXX) $(CXXFLAGS)	$(STD) -Wno-unused-parameter -pthread kthread.o $< -o $@ -lz # $(SAN)
+	$(CXX) $(CXXFLAGS) $(BCL_INCLUDES)	$(STD) -Wno-unused-parameter -pthread kthread.o $< -o $@ -lz # $(SAN)
 
 heaptest: testsrc/heaptest.cpp kthread.o $(HEADERS)
 	$(CXX) $(CXXFLAGS)	$(STD) -Wno-unused-parameter -pthread kthread.o $< -o $@ -lz # $(SAN)
@@ -98,7 +99,6 @@ dev_test_p: dev_test.cpp kthread.o hll.h
 
 clean:
 	rm -f test.o test hll.o kthread.o *hll*cpython*so $(EX)
-
 
 PREFIX?=/usr/local
 
