@@ -137,105 +137,28 @@ public:
         delete bcl_map_;
         delete bcl_set_;
     }
-    RangeMinHash(std::string) {throw NotImplementedError("");}
-    double cardinality_estimate() const {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinhash.cardinality_estimate()\n");
-        // equivalent to minimizers_.size() is capacity()
-        // TODO: assert equivalence of the BCL and std results
-        // assert(bcl_map_->capacity() == minimizers_.size());
-        assert(this->bcl_set_->size() == minimizers_.size());
-        std::cout << "set size = " << bcl_set_->size() << " and actual size = " << minimizers_.size() << std::endl;
-        return double(std::numeric_limits<T>::max()) / this->max_element() * this->counter; // TODO: replace size with bcl_map_->size()
-        // return double(std::numeric_limits<T>::max()) / this->max_element() * minimizers_.size();
-    }
-    RangeMinHash(gzFile fp) {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinhash file constructor\n");
-        if(!fp) throw std::runtime_error("Null file handle!");
-        this->read(fp);
-    }
-    DBSKETCH_READ_STRING_MACROS
-    DBSKETCH_WRITE_STRING_MACROS
-    ssize_t read(gzFile fp) {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinHash.read()\n");
-        ssize_t ret = gzread(fp, this, sizeof(*this));
-        T v;
-        for(ssize_t read; (read = gzread(fp, &v, sizeof(v))) == sizeof(v);minimizers_.insert(v), size++, bcl_map_->insert_or_assign(v, 1), ret += read);
-        return ret;
-    }
-    RangeMinHash &operator+=(const RangeMinHash &o) {
-        // TODO: add to tests
-        minimizers_.insert(o.begin(), o.end());
-        fprintf(stderr, "RangeMinhash +=\n");
-    	// bcl_map_->insert_or_assign(o.begin(), o.end());
-        while(minimizers_.size() > this->ss_)
-            minimizers_.erase(minimizers_.begin());
-        return *this;
-
-        // new version (untested)
-        // bcl_map_->insert_or_assign(o.begin(), o.end()); // TODO: make sure range works
-        // while(bcl_map_->size() > this->ss_)
-        //     bcl_map_->erase(bcl_map_->begin());
-        // return *this;
-    }
-    RangeMinHash operator+(const RangeMinHash &o) const {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinhash +\n");
-        RangeMinHash ret(*this);
-        ret += o;
-        return ret;
-
-        // TODO: add new version
-    }
-    ssize_t write(gzFile fp) const {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinhash.write()\n");
-        if(!fp) throw std::runtime_error("Null file handle!");
-        char tmp[sizeof(*this)];
-        std::memcpy(tmp, this, sizeof(*this));
-        // Hacky, non-standard-layout-type alternative to offsetof
-        std::memset(tmp + (reinterpret_cast<const char *>(&minimizers_) - reinterpret_cast<const char *>(this)), 0, sizeof(minimizers_));
-        ssize_t ret = gzwrite(fp, tmp, sizeof(tmp));
-        for(const auto v: minimizers_)
-            ret += gzwrite(fp, &v, sizeof(v));
-        return ret;
-
-        // TODO: add new version
-    }
-    // TODO: add to tests and add new version
-    auto rbegin() const { fprintf(stderr, "RangeMinHash.rbegin()\n"); return minimizers_.rbegin();}
-    // TODO: add to tests and add new version
-    auto rbegin() { fprintf(stderr, "RangeMinHash.rbegin()\n"); return minimizers_.rbegin();}
-    
-    
+    RangeMinHash(std::string) {throw NotImplementedError("");}    
     /*
      * Using BCL
      * gets the maximum element from the set
      */
     T max_element() const {
-        // fprintf(stderr, "RangeMinHash.max_element()\n"); // confirmed use
+        // fprintf(stderr, "RangeMinHash.max_element()\n");
 #if 0
         for(const auto e: *this)
             assert(*begin() >= e);
 #endif
         return *begin(); // NOTE: when begin() is updated, max_element() should be too. Just confirm that it's sorted properly
     }
-    T min_element() const {
-        // TODO: add to tests and add new version
-        fprintf(stderr, "RangeMinHash.min_element()\n");
-        return *rbegin();
-    }
     INLINE void addh(T val) {
-        // fprintf(stderr, "RangeMinHash.addh()\n"); // confirmed use
+        // fprintf(stderr, "RangeMinHash.addh()\n");
         val = hf_(val);
         this->add(val);
 
         // NOTE: updating add() should update this as well
     }
     INLINE void add(T val) {
-        // fprintf(stderr, "RangeMinHash.add()\n"); // confirmed use
+        // fprintf(stderr, "RangeMinHash.add()\n");
         
         // TODO: make work for BCL map
         if(this->counter == this->ss_) { // TODO: make counter be bcl_map->size() in all places
@@ -271,19 +194,6 @@ public:
             }
         } else minimizers_.insert(val);
     }
-    template<typename T2>
-    INLINE void addh(T2 val) {
-        // TODO: add to tests and add new version
-        fprintf(stderr, "RangeMinHash.addh(T2)\n");
-        val = hf_(val);
-        CONST_IF(std::is_same<T2, T>::value) {
-            add(val);
-        } else {
-            static_assert(sizeof(val) % sizeof(T) == 0, "val must be the same size or greater than inserted element.");
-            T *ptr = reinterpret_cast<T *>(&val);
-            for(unsigned i = 0; i < sizeof(val) / sizeof(T); add(ptr[i++]));
-        }
-    }
     // TODO: add to tests and update
     auto begin() { fprintf(stderr, "RangeMinHash.begin()\n"); return minimizers_.begin();}
     // TODO: add to tests and update
@@ -291,45 +201,30 @@ public:
         // assert(minimizers_->begin() == bcl_map_->begin());
         // return bcl_map_->begin(); // TODO: use in future
         return minimizers_.begin();
-    } // confirmed use
+    }
     // TODO: add to tests and update
     auto end() { fprintf(stderr, "RangeMinHash.end()\n"); return minimizers_.end();}
     auto end() const {
         // assert(minimizers_->end() == bcl_map_->end());
         // return bcl_map_->end(); // TODO: use in future
         return minimizers_.end();
-    } // confirmed use
+    }
     template<typename C2>
     size_t intersection_size(const C2 &o) const {
-        // fprintf(stderr, "RangeMinHash.intersection_size()\n"); // confirmed use
+        // fprintf(stderr, "RangeMinHash.intersection_size()\n");
         return common::intersection_size(o, *this, cmp_);
 
         // TODO: figure out way to use intersection size with this new version???
     }
     double jaccard_index(const RangeMinHash &o) const {
-        // fprintf(stderr, "RangeMinHash.jaccard_index()\n"); // confirmed use
+        // fprintf(stderr, "RangeMinHash.jaccard_index()\n");
 
         assert(minimizers_.size() == size() && size() == this->counter); // TODO: test. Just need to replace minimizers_.size() with new size
         double is = this->intersection_size(o);
         return is / (minimizers_.size() + o.size() - is);
     }
-    template<typename Container>
-    Container to_container() const {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinHash.to_container()\n");
-        if(this->ss_ != size()) // If the sketch isn't full, add max to the end until it is.
-            minimizers_.resize(this->ss_, std::numeric_limits<T>::max());
-        return Container(std::rbegin(minimizers_), std::rend(minimizers_.end()));
-    }
-    void clear() {
-        // TODO: add to tests
-        fprintf(stderr, "RangeMinHash.clear()\n");
-        decltype(minimizers_)().swap(minimizers_);
-    }
-    // TODO: add to tests
-    void free() { fprintf(stderr, "RangeMinHash.free()\n"); clear();}
     final_type cfinalize() const {
-        // fprintf(stderr, "RangeMinHash.cfinalize()\n"); // confirmed use
+        // fprintf(stderr, "RangeMinHash.cfinalize()\n");
         // std::vector<T> reta(minimizers_.begin(), minimizers_.end());
         // if(reta.size() < this->ss_)
         //     reta.insert(reta.end(), this->ss_ - reta.size(), std::numeric_limits<uint64_t>::max());
@@ -369,8 +264,6 @@ public:
         final_type ret(std::move(reta));
         return ret;
     }
-    // TODO: add to tests
-    std::vector<T> mh2vec() const {fprintf(stderr, "RangeMinHash.mh2vec()\n");return to_container<std::vector<T>>();}
     size_t size() const {
         if(minimizers_.size() != bcl_set_->size()) { // TODO: delete debug print statement
             fprintf(stderr, "Testing size: min = %ld, bcl = %ld, size = %ld\n", minimizers_.size(), bcl_map_->capacity(), this->counter);
@@ -379,7 +272,7 @@ public:
         //     fprintf(stderr, "Testing size: min = %ld, bcl = %ld, bcl local = %ld\n", minimizers_.size(), bcl_map_->capacity(), bcl_map_->local_capacity());
         // }
         return bcl_set_->size();
-    } // confirmed use
+    }
     using key_compare = typename decltype(minimizers_)::key_compare;
     SET_SKETCH(minimizers_)
 };
