@@ -121,7 +121,6 @@ protected:
     std::set<T, Cmp> minimizers_; // using std::greater<T> so that we can erase from begin()
     BCL::HashMap<T, int> * bcl_map_; // Use of hash map is a temporary replacement for a set. When Sets are available in BCL.
     BCL::HashSet<T,int> * bcl_set_;
-    int counter; // Tracks the current size (number of elements) in the HashMap. Should be replaced with the size function when available.
 
 public:
     using final_type = FinalRMinHash<T, Allocator>;
@@ -131,7 +130,6 @@ public:
     {
         bcl_set_ = new BCL::HashSet<T,int>(sketch_size);
         bcl_map_ = new BCL::HashMap<T,int>(sketch_size);
-        counter = 0;
     }
     ~RangeMinHash() {
         delete bcl_map_;
@@ -161,21 +159,22 @@ public:
         // fprintf(stderr, "RangeMinHash.add()\n");
         
         // TODO: make work for BCL map
-        if(this->counter == this->ss_) { // TODO: make counter be bcl_map->size() in all places
-            if(cmp_(max_element(), val)) {
-                bcl_set_->insert_or_assign(val, 1);
-                if(bcl_set_->size() > this->ss_) { 
-                    // TODO: figure out what's going on
-                    // bcl_set_->insert_or_assign(*minimizers_.begin(), 0);
-                    // auto test = *bcl_map_->begin();
-                    // auto test2 = test.value_type();
-                    // auto test3 = test2.first;
-                    // bcl_map_->insert_or_assign((*bcl_map_->begin()), 0); // TODO: get info more cleanly
-                }
-            }
-        } else {
-            bcl_set_->insert_or_assign(val, 1);
-        }
+        // if(this->bcl_set_->size() == this->ss_) {
+        //     if(cmp_(max_element(), val)) {
+        //         bcl_set_->insert_or_assign(val, 1);
+        //         if(bcl_set_->size() > this->ss_) { 
+        //             bcl_set_->delete_max();
+        //             // TODO: figure out what's going on
+        //             // bcl_set_->insert_or_assign(*minimizers_.begin(), 0);
+        //             // auto test = *bcl_map_->begin();
+        //             // auto test2 = test.value_type();
+        //             // auto test3 = test2.first;
+        //             // bcl_map_->insert_or_assign((*bcl_map_->begin()), 0); // TODO: get info more cleanly
+        //         }
+        //     }
+        // } else {
+        //     bcl_set_->insert_or_assign(val, 1);
+        // }
 
         // NOTE: test new version (above)
         // if(minimizers_.size() != bcl_map_->capacity()) {
@@ -188,7 +187,7 @@ public:
                 bcl_set_->insert_or_assign(val, 1);
                 if(minimizers_.size() > this->ss_) {
                     minimizers_.erase(minimizers_.begin());
-                    bcl_set_->delete_max();
+                    // bcl_set_->delete_max(); //TODO: including delete_max() here causes an error, do not use in current state
                     // bcl_map_->insert_or_assign(minimizers_.begin()->val, 0);
                 }
             }
@@ -219,7 +218,7 @@ public:
     double jaccard_index(const RangeMinHash &o) const {
         // fprintf(stderr, "RangeMinHash.jaccard_index()\n");
 
-        assert(minimizers_.size() == size() && size() == this->counter); // TODO: test. Just need to replace minimizers_.size() with new size
+        assert(minimizers_.size() == size() && size() == this->bcl_set_->size()); // TODO: test. Just need to replace minimizers_.size() with new size
         double is = this->intersection_size(o);
         return is / (minimizers_.size() + o.size() - is);
     }
@@ -266,7 +265,7 @@ public:
     }
     size_t size() const {
         if(minimizers_.size() != bcl_set_->size()) { // TODO: delete debug print statement
-            fprintf(stderr, "Testing size: min = %ld, bcl = %ld, size = %ld\n", minimizers_.size(), bcl_map_->capacity(), this->counter);
+            fprintf(stderr, "Testing size: min = %ld, bcl = %ld, size = %ld\n", minimizers_.size(), bcl_map_->capacity(), this->bcl_set_->size());
         }
         // if(minimizers_.size() != bcl_map_->capacity()) {
         //     fprintf(stderr, "Testing size: min = %ld, bcl = %ld, bcl local = %ld\n", minimizers_.size(), bcl_map_->capacity(), bcl_map_->local_capacity());
