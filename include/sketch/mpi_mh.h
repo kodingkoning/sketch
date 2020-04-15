@@ -5,6 +5,7 @@
 #include "fixed_vector.h"
 #include <unordered_map>
 #include "isz.h"
+#include <mpi.h>
 
 
 /*
