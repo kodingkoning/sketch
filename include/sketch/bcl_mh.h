@@ -149,10 +149,15 @@ public:
         return *begin(); // NOTE: when begin() is updated, max_element() should be too. Just confirm that it's sorted properly
     }
     INLINE void addh(T val) {
+        // fprintf(stderr, "RangeMinHash.addh()\n");
         val = hf_(val);
         this->add(val);
+
+        // NOTE: updating add() should update this as well
     }
-    INLINE void add(T val) {        
+    INLINE void add(T val) {
+        // fprintf(stderr, "RangeMinHash.add()\n");
+        
         // TODO: make work for BCL map
         // if(this->bcl_set_->size() == this->ss_) {
         //     if(cmp_(max_element(), val)) {
@@ -188,22 +193,31 @@ public:
             }
         } else minimizers_.insert(val);
     }
+    // TODO: add to tests and update
     auto begin() { fprintf(stderr, "RangeMinHash.begin()\n"); return minimizers_.begin();}
+    // TODO: add to tests and update
     auto begin() const {
         // assert(minimizers_->begin() == bcl_map_->begin());
         // return bcl_map_->begin(); // TODO: use in future
         return minimizers_.begin();
     }
+    // TODO: add to tests and update
     auto end() { fprintf(stderr, "RangeMinHash.end()\n"); return minimizers_.end();}
     auto end() const {
+        // assert(minimizers_->end() == bcl_map_->end());
+        // return bcl_map_->end(); // TODO: use in future
         return minimizers_.end();
     }
     template<typename C2>
     size_t intersection_size(const C2 &o) const {
+        // fprintf(stderr, "RangeMinHash.intersection_size()\n");
         return common::intersection_size(o, *this, cmp_);
+
+        // TODO: figure out way to use intersection size with this new version???
     }
     double jaccard_index(const RangeMinHash &o) const {
         assert(minimizers_.size() == size() && size() == this->bcl_set_->size()); // TODO: test. Just need to replace minimizers_.size() with new size
+        // fprintf(stderr, "RangeMinHash.jaccard_index()\n");
         double is = this->intersection_size(o);
         return is / (minimizers_.size() + o.size() - is);
     }
