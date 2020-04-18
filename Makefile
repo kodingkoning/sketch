@@ -6,7 +6,7 @@ DBG=-DNDEBUG
 else
 DBG=
 endif
-BCL_INCLUDES=-I../bcl/bcl -I../bcl 
+BCL_INCLUDES=-I../bcl/bcl -I../bcl -I../ompi/ompi/mca/topo/treematch/treematch 
 WARNINGS=-Wall -Wextra -Wno-char-subscripts \
 		 -Wpointer-arith -Wwrite-strings -Wdisabled-optimization \
 		 -Wformat -Wcast-align -Wno-unused-function -Wno-unused-parameter \
