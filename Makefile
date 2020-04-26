@@ -6,7 +6,8 @@ DBG=-DNDEBUG
 else
 DBG=
 endif
-BCL_INCLUDES=-I../bcl/bcl -I../bcl 
+BCL_INCLUDES=-I../bcl/bcl -I../bcl -I../boost_1_72_0
+BCL_FLAGS = -std=c++17 -Istdc++fs
 WARNINGS=-Wall -Wextra -Wno-char-subscripts \
 		 -Wpointer-arith -Wwrite-strings -Wdisabled-optimization \
 		 -Wformat -Wcast-align -Wno-unused-function -Wno-unused-parameter \
@@ -16,7 +17,7 @@ WARNINGS=-Wall -Wextra -Wno-char-subscripts \
 FLAGS=-O3 -funroll-loops -pipe -march=native -Iinclude/sketch -I. -Ivec/blaze -Ivec -Ipybind11/include -Iinclude -fpic -Wall $(WARNINGS) \
      -fno-strict-aliasing \
       -DXXH_INLINE_ALL  \
-	  -Wno-attributes -Wno-pragmas -Wno-ignored-qualifiers $(BCL_INCLUDES)
+	  -Wno-attributes -Wno-pragmas -Wno-ignored-qualifiers $(BCL_FLAGS) $(BCL_INCLUDES)
 
 CXXFLAGS=$(FLAGS) -Wreorder  \
 
