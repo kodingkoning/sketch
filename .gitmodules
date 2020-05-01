@@ -27,3 +27,6 @@
 [submodule "xxHash"]
 	path = xxHash
 	url = https://github.com/Cyan4973/xxHash
+[submodule "bcl"]
+	path = bcl
+	url = https://github.com/berkeley-container-library/bcl.git
