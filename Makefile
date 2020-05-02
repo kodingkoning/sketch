@@ -6,7 +6,7 @@ DBG=-DNDEBUG
 else
 DBG=
 endif
-BCL_INCLUDES=-I../bcl/bcl -I../bcl -I../boost_1_72_0
+BCL_INCLUDES=-Ibcl -Ibcl/bcl -IBigInt
 BCL_FLAGS = -std=c++17 -Istdc++fs
 WARNINGS=-Wall -Wextra -Wno-char-subscripts \
 		 -Wpointer-arith -Wwrite-strings -Wdisabled-optimization \
@@ -46,7 +46,7 @@ GPUFLAGS= $(CCBIN) -O3 -std=c++17 -Iinclude -I. -Xcompiler -march=native -Xcompi
 
 INCLUDES=-I`$(PYCONF) --includes` -Ipybind11/include
 SUF=`$(PYCONF) --extension-suffix`
-OBJS=$(patsubst %.cpp,%$(SUF),$(wildcard *.cpp))
+OBJS=$(patsubst %.cpp,%$(SUF),$(wildcard *.cpp)) BigInt/BigInt.o
 HEADERS=$(wildcard include/sketch/*.h)
 
 SAN=-fsanitize=undefined -fsanitize=address
@@ -72,7 +72,7 @@ hpython: pybbmh.cpython.so
 	$(CC) -c $(FLAGS)	$< -o $@
 
 %: testsrc/%.cpp kthread.o $(HEADERS)
-	$(CXX) $(CXXFLAGS) $(BCL_INCLUDES)	$(STD) -Wno-unused-parameter -pthread kthread.o $< -o $@ -lz # $(SAN)
+	$(CXX) $(OBJS) $(CXXFLAGS) $(BCL_INCLUDES)	$(STD) -Wno-unused-parameter -pthread kthread.o $< -o $@ -lz # $(SAN)
 
 heaptest: testsrc/heaptest.cpp kthread.o $(HEADERS)
 	$(CXX) $(CXXFLAGS)	$(STD) -Wno-unused-parameter -pthread kthread.o $< -o $@ -lz # $(SAN)
