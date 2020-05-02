@@ -124,6 +124,7 @@ BigInt operator *(int num, const BigInt & rhs);
 BigInt operator /(const BigInt & lhs, const BigInt & rhs);
 BigInt operator /(const BigInt & lhs, int num);
 BigInt operator %(const BigInt & lhs, const BigInt & rhs);
+BigInt power(const BigInt & base, const BigInt & exp);
 
 bool operator == (const BigInt & lhs, const BigInt & rhs);
 bool operator <  (const BigInt & lhs, const BigInt & rhs);

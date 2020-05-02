@@ -778,3 +778,14 @@ const BigInt & BigInt::operator %=(const BigInt & rhs)
     return *this;
 }
 
+BigInt power(const BigInt & base, const BigInt & exp) {
+    if (exp == BigInt(0)) {
+        return BigInt(1);
+    } else if (exp % 2 == BigInt(0)) {
+        BigInt val = power(base, exp / 2);
+        return val * val;
+    } else {
+        BigInt val = power(base, exp / 2);
+        return base * val * val;
+    }
+}
