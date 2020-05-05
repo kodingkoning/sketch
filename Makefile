@@ -46,7 +46,7 @@ GPUFLAGS= $(CCBIN) -O3 -std=c++17 -Iinclude -I. -Xcompiler -march=native -Xcompi
 
 INCLUDES=-I`$(PYCONF) --includes` -Ipybind11/include
 SUF=`$(PYCONF) --extension-suffix`
-OBJS=$(patsubst %.cpp,%$(SUF),$(wildcard *.cpp)) BigInt/BigInt.o
+OBJS=$(patsubst %.cpp,%$(SUF),$(wildcard *.cpp)) include/sketch/BigInt/BigInt.o
 HEADERS=$(wildcard include/sketch/*.h)
 
 SAN=-fsanitize=undefined -fsanitize=address

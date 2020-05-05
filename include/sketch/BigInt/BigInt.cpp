@@ -602,6 +602,18 @@ bool BigInt::IsPositive() const
    return mySign == positive;
 }
 
+bool BigInt::IsEven() const
+// postcondition: returns true iff BigInt is even
+{
+    return myDigits[0] % 2 == 0;
+}
+
+bool BigInt::IsOdd() const
+// postcondition: returns true iff BigInt is odd
+{
+    return myDigits[0] % 2 == 1;
+}
+
 
 void BigInt::DivideHelp(const BigInt & lhs, const BigInt & rhs,
                         BigInt & quotient, BigInt & remainder)
@@ -779,9 +791,23 @@ const BigInt & BigInt::operator %=(const BigInt & rhs)
 }
 
 BigInt power(const BigInt & base, const BigInt & exp) {
-    if (exp == BigInt(0)) {
-        return BigInt(1);
-    } else if (exp % 2 == BigInt(0)) {
+    BigInt pow = 1;
+    BigInt n = exp;
+    BigInt x = base;
+    while (n != 0) {
+        if (n.IsOdd()) {
+            pow *= x;
+        }
+        n /= 2;
+        x *= x;
+    }
+    // std::cout << "test" << std::endl;
+    return pow;
+    // std::cout << "test" << std::endl;
+
+    if (exp == 0) {
+        return 1;
+    } else if (exp.IsEven()) {
         BigInt val = power(base, exp / 2);
         return val * val;
     } else {

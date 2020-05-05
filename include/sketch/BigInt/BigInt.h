@@ -86,6 +86,9 @@ class BigInt
 
     bool Equal(const BigInt & rhs)        const;
     bool LessThan(const BigInt & rhs)     const;
+    
+    bool IsOdd() const; // return true iff number is odd.
+    bool IsEven() const; // return true iff number is even.
 
   private:
 
