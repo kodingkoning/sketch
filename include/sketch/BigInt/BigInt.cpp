@@ -791,20 +791,22 @@ const BigInt & BigInt::operator %=(const BigInt & rhs)
 }
 
 BigInt power(const BigInt & base, const BigInt & exp) {
-    BigInt pow = 1;
-    BigInt n = exp;
-    BigInt x = base;
-    while (n != 0) {
-        if (n.IsOdd()) {
-            pow *= x;
-        }
-        n /= 2;
-        x *= x;
-    }
-    // std::cout << "test" << std::endl;
-    return pow;
-    // std::cout << "test" << std::endl;
+    // BigInt pow = 1;
+    // BigInt n = exp;
+    // BigInt x = base;
+    // while (n != 0) {
+    //     if (n.IsOdd()) {
+    //         pow *= x;
+    //         n -= 1;
+    //     }
+    //     n /= 2;
+    //     x *= x;
+    // }
+    // // std::cout << "test" << std::endl;
+    // return pow;
+    // // std::cout << "test" << std::endl;
 
+    // std::cout << "test" << std::endl;
     if (exp == 0) {
         return 1;
     } else if (exp.IsEven()) {

@@ -6,28 +6,12 @@
 #include <sys/stat.h>
 #include <math.h>
 
-// // code from https://stackoverflow.com/questions/9330915/number-of-combinations-n-choose-r-in-c
-// BigInt nChoosek( const BigInt& n, const BigInt& k_param )
-// {
-//     BigInt k = BigInt(k_param);
-//     if (k > n) return BigInt(0);
-//     if (k * 2 > n) k = n-k;
-//     if (k == 0) return BigInt(1);
-
-//     BigInt result = n;
-//     for( BigInt i = 2; i <= k; i += 1 ) {
-//         result *= (n-i+1);
-//         result /= i;
-//     }
-//     return result;
-// }
-
 double expected_unique_dbl(double k, double n) {
     // kmers is the number of picks, which is the number of kmers in the files
     // n is the number of unique kmers that could be chosen
 
-    return n - pow(n-1, k)*pow(n, 1-k);
-    // return n - n*pow(n-1, k)/pow(n, k);
+    // return n - pow(n-1, k)*pow(n, 1-k);
+    return n - n*pow(n-1, k)/pow(n, k);
     // return n * (1 - pow((n-1)/n, kmers));
 
     double result = 1;
@@ -42,8 +26,8 @@ BigInt expected_unique(const BigInt& kmers, const BigInt& n) {
     // kmers is the number of picks, which is the number of kmers in the files
     // n is the number of unique kmers that could be chosen
 
-    // return n - n*power(n-1, kmers)/power(n, kmers);
-    // return n - power(n-1, kmers)*power(n, 1-kmers);
+    // BigInt result_a = n - n*power(n-1, kmers)/power(n, kmers);
+    return n - n*power(n-1, kmers)/power(n, kmers); // tested
 
     // std::cout << "kmers = " << kmers << " and n = " << n << std::endl;
     // new strategy
@@ -135,7 +119,7 @@ int test_one_read() {
     BigInt unique_kmers = expected_unique(kmers, n);
     std::cout << "n = " << n_double << " kmers = " << kmers << " unique_kmers = " << unique_kmers << std::endl;
     std::cout << "n = " << n_double << " kmers = " << kmers << " unique_kmers = " << expected_unique_dbl(kmers, n_double) << std::endl;
-    fprintf(stderr, "double estimated number of unique kmers with k of %d and n of %d = %f\n", kmers, n_double, expected_unique_dbl(kmers, n_double));
+    fprintf(stderr, "double estimated number of unique kmers with k of %f and n of %f = %f\n", kmers, n_double, expected_unique_dbl(kmers, n_double));
 
     // fprintf(stderr, "Estimated number of unique kmers with k of %d and n of %d = %d\n", kmers, n_double, unique_kmers);
 
@@ -145,7 +129,7 @@ int test_one_read() {
 
     // std::fprintf(stderr, "The header line may be more than 1\% of the file size, so the estimated k-mers may be overestimated.");
 
-    RangeMinHash<std::string> localSketch(1337);
+    RangeMinHash<std::string> localSketch(150);
     // NOTE: this assumes that max = 2^64 and min = 0
     if (localSketch.sketch_size() > unique_kmers) {
         std::cout << "NOTE: the size of the sketch is greater than the number of expected unique kmers." << std::endl;

@@ -237,36 +237,82 @@ void scatterArray(char **a, char **allA, int *total, int *n, int id, int nProcs)
 	free(displacements);
 }
 
+/* complemenntbase() and reversecomplement() come from BELLA code
+ */
+
+char
+complementbase(char n) {
+	switch(n)
+	{
+	case 'A':
+		return 'T';
+	case 'T':
+		return 'A';
+	case 'G':
+		return 'C';
+	case 'C':
+		return 'G';
+	}
+	assert(false);
+	return ' ';
+}
+
+std::string
+reversecomplement(const std::string& seq) {
+
+	std::string cpyseq = seq;
+	std::reverse(cpyseq.begin(), cpyseq.end());
+
+	std::transform(
+		std::begin(cpyseq),
+		std::end  (cpyseq),
+		std::begin(cpyseq),
+	complementbase);
+
+	return cpyseq;
+}
+
+
 /* sketchKmers adds the kmers in the data read to a Minhash sketch
  * Receive: a, a pointer to the head of an array;
  * 			numValues, the number of chars in the array.
  * Return: the MinHash sketch with the k-mers
  */
 void sketchKmers(char* a, int numValues, int k, RangeMinHash<std::string> & kmerSketch) {
-	// RangeMinHash<std::string> kmerSketch();
 	// TODO: analyze values
-	char * kmer = (char*)calloc(k, sizeof(char));
-	// sketchedKmers = *kmerSketch;
-	// return kmerSketch;
-	int kmer_len = 0;
+	std::string kmer = "";
 	for(int i = 0; i < numValues; i++) {
 		if(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G') {
-			if(kmer_len < k) {
-				kmer_len++;
-				kmer[kmer_len] = a[i];
+			if(kmer.length() < k) {
+				kmer.push_back(a[i]);
 			} else {
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
-				kmerSketch.add(kmer);
-				for(int j = 0; j < k-1; j++) {
-					// TODO: make this more efficient. Maybe keep an index stored of the first...
-					kmer[j] = kmer[j+1];
+				std::string twin = reversecomplement(kmer);
+				if (twin < kmer) {
+					kmerSketch.add(twin);
+				} else {
+					kmerSketch.add(kmer);
 				}
-				kmer[k-1] = a[i];
+				kmer = kmer.substr(1, k-1) + a[i];
 			}
 		} else {
-			kmer_len = 0;
+			kmer = "";
 		}
 	}
+}
+
+void combineSketches(RangeMinHash<std::string> & kmerSketch) {
+	// TODO: combine the sketches
+
+	// plan:
+	//		start with the original sketch
+	//		aggregate them
+	//		need to be able to send it
+
+	// std::string * data = kmerSketch.mh2vec().data();
+	// std::cout << data << std::endl;
+	// TODO: package this data for sending
+	// then std::vector has data() that gives a pointer to the data storage
 }
 
 /* sumArray sums the values in an array of doubles.
