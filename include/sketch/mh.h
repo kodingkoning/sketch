@@ -116,6 +116,7 @@ protected:
     Cmp cmp_;
     ///using HeapType = std::priority_queue<T, std::vector<T, Allocator<T>>>;
     std::set<T, Cmp> minimizers_; // using std::greater<T> so that we can erase from begin()
+    uint64_t threshold_; // the threshold cutoff. If 0 or negative, then will be ignored.
 
 public:
     using final_type = FinalRMinHash<T, Allocator>;
@@ -123,12 +124,14 @@ public:
     RangeMinHash(size_t sketch_size, Hasher &&hf=Hasher(), Cmp &&cmp=Cmp()):
         AbstractMinHash<T, Cmp>(sketch_size), hf_(std::move(hf)), cmp_(std::move(cmp))
     {
+        threshold_ = 0;
     }
     RangeMinHash(std::string) {throw NotImplementedError("");}
     double cardinality_estimate() const {
         return double(std::numeric_limits<T>::max()) / this->max_element() * minimizers_.size();
     }
     RangeMinHash(gzFile fp) {
+        threshold_ = 0;
         if(!fp) throw std::runtime_error("Null file handle!");
         this->read(fp);
     }
@@ -243,7 +246,13 @@ public:
         final_type ret(std::move(reta));
         return ret;
     }
-    std::vector<T> mh2vec() const {return to_container<std::vector<T>>();}
+    // std::vector<T> mh2vec() const {return to_container<std::vector<T>>();} // ERROR: this method doesn't work because set doesn't have resize method
+    std::vector<T> mh2vec() const {
+        std::vector<T> vec(minimizers_.begin(), minimizers_.end());
+        if(this->ss_ != size()) // If the sketch isn't full, add max to the end until it is.
+            vec.resize(this->ss_, std::numeric_limits<T>::max());
+        return vec;
+    }
     size_t size() const {return minimizers_.size();}
     using key_compare = typename decltype(minimizers_)::key_compare;
     SET_SKETCH(minimizers_)

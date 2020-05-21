@@ -8,7 +8,7 @@
 // #include "include/sketch/BigInt/BigInt.h"
 // #include <iostream>
 // #include "mpiParallelIO.cpp"
-#include "expectedValues.cpp"
+#include "mpiParallelIO.cpp"
 
 template<typename T>
 int pc(const T &x, const char *s="unspecified") {
@@ -40,7 +40,28 @@ using namespace mh;
 
 int main(int argc, char *argv[]) {
 
-    test_one_read();
+    if (argc < 2) {
+        fprintf(stderr, "\n*** Usage: caldiskstest <inputFile>\n\n");
+        exit(1);
+    }
+    std::string fastq_file = argv[1];
+    std::string dir = get_current_dir_name();
+    std::string filename = dir+"/" + fastq_file;
+    std::string filename2 = dir+"/"+"ecsample2000.fastq";
+
+    MPI_Init(NULL, NULL);
+    RangeMinHash<uint64_t> sketch(LOCAL_SKETCH_SIZE);
+    sketchFromFile(filename, sketch);
+
+    RangeMinHash<uint64_t> sketch2(LOCAL_SKETCH_SIZE);
+    sketchFromFile(filename2, sketch2);
+
+    sketch.finalize();
+    sketch2.finalize();
+    double similarity = sketch.jaccard_index(sketch2);
+    std::cout << "* similarity between sketches = " << similarity << std::endl;
+
+    MPI_Finalize();
     return 0;
 
     BCL::init(); // includes MPI_Init()

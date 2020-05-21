@@ -10,36 +10,70 @@
 * for Senior Project at Calvin University.
 */
 
-// TODO: test all of this
-
 #include <stdio.h>	 /* I/O stuff */
 #include <stdlib.h>	 /* calloc, etc. */
 #include <mpi.h>	 /* MPI calls */
 #include <string.h>	 /* strlen() */
 #include <stdbool.h> /* bool */
-#include "mh.h"
 #include <sys/stat.h>
+#include <iostream>
+#include "mh.h"
+#include "calcThreshold.cpp"
 
 using namespace sketch;
 
+int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id);
 void readArray(const char * fileName, char ** a, int * n);
 void parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs);
 void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nProcs);
-void sketchKmers(char* a, int numValues, int k, RangeMinHash<std::string> & kmerSketch);
+void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch);
+void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id);
 
-int readFile(const char *fileName, int k, RangeMinHash<std::string>& localSketch)
+void sketchFromFile(std::string filename, RangeMinHash<uint64_t> globalSketch) { // TODO: save the sketch back to the caldiskstest well
+    int k = 7; // k = 21 is the default for Mash
+	int nProcs, id;
+    double startTime, totalTime, threshTime, sketchTime, gatherTime;
+
+    // MPI_Init(NULL, NULL);
+	MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
+
+    startTime = MPI_Wtime();
+
+	// TODO : would be better to only calculate this on one process
+    // BigInt threshold = find_threshold(filename, k, SKETCH_SIZE);
+    threshTime = MPI_Wtime();
+
+    RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
+
+	std::cout << "Created sketch objects..." << std::endl;
+
+    readFile(filename.c_str(), k, localSketch, nProcs, id);
+	std::cout << "Read FASTQ file and made local sketches..." << std::endl;
+
+    sketchTime = MPI_Wtime();
+
+    combineSketches(localSketch, globalSketch, nProcs, id);
+	std::cout << "Combined the sketches..." << std::endl;
+
+    gatherTime = MPI_Wtime();
+
+    totalTime = MPI_Wtime() - startTime;
+    std::cout << "\n* Threshold calculation time = \t" << (threshTime - startTime) << std::endl;
+    std::cout << "\n* Local sketching time = \t" << (sketchTime - threshTime) << std::endl;
+    std::cout << "\n* Sketch gather time = \t\t" << (gatherTime - sketchTime) << std::endl;
+    std::cout << "\n* Total Cal_DisKS time = \t" << (totalTime - startTime) << std::endl;
+
+    // MPI_Finalize();
+}
+
+int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id)
 {
-	int nProcs, id, allCount, localCount;
-	double sum;
+	int allCount, localCount;
 	char *a;
 	char *allA;
 	double startTime, sumTime, ioTime, scatterTime, totalTime;
 	bool parallelIO = true;
-
-	MPI_Init(NULL, NULL);
-
-	MPI_Comm_rank(MPI_COMM_WORLD, &id);
-	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
 
 	startTime = MPI_Wtime();
 
@@ -63,7 +97,6 @@ int readFile(const char *fileName, int k, RangeMinHash<std::string>& localSketch
 	// addToSketch(kmers);
 	sketchKmers(a, localCount, k, localSketch);
 	// instead of finding the sum of numbers, we will be adding the values to a MinHash sketch
-	//   sum = parallelSumArray(a, localCount);
 
 	sumTime = MPI_Wtime() - startTime - ioTime - scatterTime;
 
@@ -71,13 +104,11 @@ int readFile(const char *fileName, int k, RangeMinHash<std::string>& localSketch
 
 	if (id == 0)
 	{
-		printf("The sum of the values in the input file '%s' is %g\n",
-			   fileName, sum);
+		// printf("The sum of the values in the input file '%s' is %g\n",
+		// 	   fileName, sum);
 
 		printf("For %d processes:\nioTime\t\tscatterTime\tsumTime\t\ttotalTime\n%f\t%f\t%f\t%f\n\n", nProcs, ioTime, scatterTime, sumTime, totalTime);
 	}
-
-	MPI_Finalize();
 
 	if (id == 0 && !parallelIO)
 		free(allA);
@@ -186,6 +217,7 @@ void readArray(const char *fileName, char **a, int *n)
 	}
 
 	// TODO: improve this section, initially designed for doubles and can be simpler with chars
+	// however, this code should not be used with Cal-DisKS because the point is to use MPI parallel I/O
 	for (count = 0; count < howMany; count++)
 		fscanf(fin, "%s", &tempA[count]);
 
@@ -272,14 +304,21 @@ reversecomplement(const std::string& seq) {
 	return cpyseq;
 }
 
+// modified from 32 bit version at from https://github.com/Ensembl/treebest/blob/master/common/hash_com.h
+inline uint64_t kmer_int(const char *s) {
+	uint64_t h = 0;
+	for ( ; *s; s++)
+		h = (h << 5) - h + *s;
+	return h;
+} 
+
 
 /* sketchKmers adds the kmers in the data read to a Minhash sketch
  * Receive: a, a pointer to the head of an array;
  * 			numValues, the number of chars in the array.
  * Return: the MinHash sketch with the k-mers
  */
-void sketchKmers(char* a, int numValues, int k, RangeMinHash<std::string> & kmerSketch) {
-	// TODO: analyze values
+void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch) {
 	std::string kmer = "";
 	for(int i = 0; i < numValues; i++) {
 		if(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G') {
@@ -289,9 +328,9 @@ void sketchKmers(char* a, int numValues, int k, RangeMinHash<std::string> & kmer
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
 				std::string twin = reversecomplement(kmer);
 				if (twin < kmer) {
-					kmerSketch.add(twin);
+					kmerSketch.add(kmer_int(twin.c_str()));
 				} else {
-					kmerSketch.add(kmer);
+					kmerSketch.add(kmer_int(kmer.c_str()));
 				}
 				kmer = kmer.substr(1, k-1) + a[i];
 			}
@@ -301,58 +340,21 @@ void sketchKmers(char* a, int numValues, int k, RangeMinHash<std::string> & kmer
 	}
 }
 
-void combineSketches(RangeMinHash<std::string> & kmerSketch) {
-	// TODO: combine the sketches
-
-	// plan:
-	//		start with the original sketch
-	//		aggregate them
-	//		need to be able to send it
-
-	// std::string * data = kmerSketch.mh2vec().data();
-	// std::cout << data << std::endl;
-	// TODO: package this data for sending
-	// then std::vector has data() that gives a pointer to the data storage
-}
-
-/* sumArray sums the values in an array of doubles.
-* Receive: a, a pointer to the head of an array;
-*          numValues, the number of values in the array.
-* Return: the sum of the values in the array.
-*/
-
-double sumArray(double *a, int numValues)
-{
-	int i;
-	double result = 0.0;
-
-	for (i = 0; i < numValues; i++)
-	{
-		result += *a;
-		a++;
+void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id) {
+	unsigned num_vals = localSketch.size();
+	uint64_t * local_data = localSketch.mh2vec().data();
+	uint64_t * global_data = NULL;
+	if(id == 0) {
+		global_data = new uint64_t[num_vals*nProcs];
 	}
 
-	return result;
-}
+	MPI_Gather(local_data, num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
 
-/* parallelSumArray sums the values in an array of doubles.
-* Receive: a, a pointer to the head of an array;
-*          numValues, the number of values in the array.
-* Return: the sum of the values in the array.
-*/
-
-double parallelSumArray(double *a, int numValues)
-{
-	int i;
-	double result = 0.0;
-	double resultSum = 0.0;
-
-	for (i = 0; i < numValues; i++)
-	{
-		result += *a;
-		a++;
+	if(id == 0) {
+		for (unsigned i = 0; i < num_vals*nProcs; i++) {
+			globalSketch.add(global_data[i]);
+		}
 	}
 
-	MPI_Reduce(&result, &resultSum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-	return resultSum;
+	delete [] global_data;
 }

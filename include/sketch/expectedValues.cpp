@@ -3,82 +3,37 @@
 #include "include/sketch/BigInt/BigInt.h"
 #include <iostream>
 #include "mpiParallelIO.cpp"
-#include <sys/stat.h>
-#include <math.h>
+#include "calcThreshold.cpp"
 
-double expected_unique_dbl(double k, double n) {
-    // kmers is the number of picks, which is the number of kmers in the files
-    // n is the number of unique kmers that could be chosen
-
-    // return n - pow(n-1, k)*pow(n, 1-k);
-    return n - n*pow(n-1, k)/pow(n, k);
-    // return n * (1 - pow((n-1)/n, kmers));
-
-    double result = 1;
-    for(double i = 0; i < k-1; i += 1) {
-        result = 1 + (1 - 1/n)*result;
-    }
-    return result;
-}
-
-// based on answer here: https://math.stackexchange.com/questions/72223/finding-expected-number-of-distinct-values-selected-from-a-set-of-integers
-BigInt expected_unique(const BigInt& kmers, const BigInt& n) {
-    // kmers is the number of picks, which is the number of kmers in the files
-    // n is the number of unique kmers that could be chosen
-
-    // BigInt result_a = n - n*power(n-1, kmers)/power(n, kmers);
-    return n - n*power(n-1, kmers)/power(n, kmers); // tested
-
-    // std::cout << "kmers = " << kmers << " and n = " << n << std::endl;
-    // new strategy
-    // BigInt result_a = n * (1 - power((n-1)/n, kmers));
-    // std::cout << "Result a of expected_unique = " << result_a << std::endl;
-    // return result_a;
-
-    // Strategy produces result
-    // while this looks longer (because of the for loop) than the other two, it is actually better because 
-    // the one-line versions have two power() calls. 
-    // However, this will take longer as we increase the file size and number of kmers
-    // TODO: find a way to parallelize???
-    // TODO: time this on Cori.
-    BigInt result = 1;
-    for(BigInt i = 0; i < kmers-1; i += 1) {
-        result = 1 + (1 - 1/n)*result;
-    }
-    std::cout << "Result b of expected_unique = " << result << std::endl;
-    return result;
-
-    BigInt unique_kmers = 0;
-    BigInt a = 1;
-    BigInt b = kmers;
-    BigInt c = 1;
-
-    std::cout << "kmers = " << kmers << " and n = " << n << std::endl;
-
-    for(BigInt i = 0; i < kmers-1; i += 1) {
-        // a = (-1)^i
-        // BigInt a = (i % 2 == 0) ? 1.0 : -1.0; // more efficient than using pow()
-        // b = kmers choose (i + 1)
-        // BigInt b = nChoosek(kmers, i+1);
-        // c = 1 / n^i
-        // c *= n;
-        // BigInt c = power(n, i);
-
-        unique_kmers += a*b / c;
-
-        // next n choose k
-        a = a == -1 ? 1 : -1;
-        b *= (kmers-i-1) / (i+2);
-        c *= n;
-
-        // std::cout << "a = " << a << " b = " << b << " c = " << c << std::endl;
-        // fprintf(stderr, "n = %lld and i = %lld ==> a = %f, b = %lf, c = %lf\n", n, i, a, b, c);
-    }
-    return unique_kmers;
-}
+// TODO: eventually this whole file should go, move the code other places
 
 int test_one_read() {
     // constants
+    int k = 7; // k = 21 is the default for Mash
+    std::string fastq_file = "ecsample1.fastq"; // file name of the fastq file in the current directory
+    std::string dir = get_current_dir_name();
+    std::string filename = dir+"/" + fastq_file;
+
+    // initMPI();
+
+    BigInt threshold = find_threshold(filename, k, SKETCH_SIZE);
+    RangeMinHash<std::string> localSketch(LOCAL_SKETCH_SIZE);
+    // RangeMinHash<std::string> globalSketch(SKETCH_SIZE);
+
+    // Read in file
+    readFile(filename.c_str(), k, localSketch);
+    std::cout << localSketch.size() << std::endl;
+
+    // collect local sketches into the global sketch
+    // RangeMinHash<std::string> globalSketch = combineSketches(localSketch);
+
+    // TODO: load in all of the local sketches
+    // finalizeMPI();
+}
+
+int test_expected_unique() {
+    // tests that had been used to verify results of expected_unique() and other calculations
+        // constants
     int k = 7; // k = 21 is the default for Mash
     // TODO: define k somewhere better
 
