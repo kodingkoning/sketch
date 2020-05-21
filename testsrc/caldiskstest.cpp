@@ -56,9 +56,9 @@ int main(int argc, char *argv[]) {
     RangeMinHash<uint64_t> sketch2(LOCAL_SKETCH_SIZE);
     sketchFromFile(filename2, sketch2);
 
-    sketch.finalize();
-    sketch2.finalize();
-    double similarity = sketch.jaccard_index(sketch2);
+    auto s1 = sketch.cfinalize();
+    auto s2 = sketch2.cfinalize();
+    double similarity = s1.jaccard_index(s2);
     std::cout << "* similarity between sketches = " << similarity << std::endl;
 
     MPI_Finalize();
