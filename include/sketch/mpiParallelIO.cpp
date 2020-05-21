@@ -29,12 +29,11 @@ void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nPr
 void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch);
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id);
 
-void sketchFromFile(std::string filename, RangeMinHash<uint64_t> globalSketch) { // TODO: save the sketch back to the caldiskstest well
+void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) {
     int k = 7; // k = 21 is the default for Mash
 	int nProcs, id;
     double startTime, totalTime, threshTime, sketchTime, gatherTime;
 
-    // MPI_Init(NULL, NULL);
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
 
@@ -53,7 +52,8 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t> globalSketch) {
 
     sketchTime = MPI_Wtime();
 
-    combineSketches(localSketch, globalSketch, nProcs, id);
+    combineSketches(localSketch, globalSketch, nProcs, id); 
+	std::cout << "sketch from file local sketch size = " << localSketch.size() << " global sketch size = " << globalSketch.size() << std::endl;
 	std::cout << "Combined the sketches..." << std::endl;
 
     gatherTime = MPI_Wtime();
@@ -64,7 +64,6 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t> globalSketch) {
     std::cout << "\n* Sketch gather time = \t\t" << (gatherTime - sketchTime) << std::endl;
     std::cout << "\n* Total Cal_DisKS time = \t" << (totalTime - startTime) << std::endl;
 
-    // MPI_Finalize();
 }
 
 int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id)
@@ -352,9 +351,13 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 
 	if(id == 0) {
 		for (unsigned i = 0; i < num_vals*nProcs; i++) {
-			globalSketch.add(global_data[i]);
+			std::cout << "size of sketch = " << globalSketch.size() << " at i = " << i << std::endl;
+			globalSketch.addh(global_data[i]);
+			//std::cout << global_data[i] << std::endl;
 		}
 	}
+
+	std::cout << "process " << id << " has sketch size of " << globalSketch.size() << std::endl;
 
 	delete [] global_data;
 }

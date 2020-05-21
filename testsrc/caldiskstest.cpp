@@ -40,6 +40,7 @@ using namespace mh;
 
 int main(int argc, char *argv[]) {
 
+    int id;
     if (argc < 2) {
         fprintf(stderr, "\n*** Usage: caldiskstest <inputFile>\n\n");
         exit(1);
@@ -47,20 +48,39 @@ int main(int argc, char *argv[]) {
     std::string fastq_file = argv[1];
     std::string dir = get_current_dir_name();
     std::string filename = dir+"/" + fastq_file;
-    std::string filename2 = dir+"/"+"ecsample2000.fastq";
+    std::string filename2 = dir+"/"+"ecsample4000_2.fastq";
 
     MPI_Init(NULL, NULL);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
     RangeMinHash<uint64_t> sketch(LOCAL_SKETCH_SIZE);
     sketchFromFile(filename, sketch);
 
     RangeMinHash<uint64_t> sketch2(LOCAL_SKETCH_SIZE);
     sketchFromFile(filename2, sketch2);
+    
+    std::cout << "sketch size = " << sketch.sketch_size() << " sketch2 size = " << sketch2.sketch_size() << std::endl;
+    
+    std::cout << "id = " << id << " and size of sketch = \t" << sketch.size() << std::endl;
+    std::cout << "id = " << id << " and size of sketch2 = \t" << sketch2.size() << std::endl;
+    vector<uint64_t> a = sketch2.mh2vec();
+    vector<uint64_t> b = sketch.mh2vec();
 
-    auto s1 = sketch.cfinalize();
-    auto s2 = sketch2.cfinalize();
-    double similarity = s1.jaccard_index(s2);
-    std::cout << "* similarity between sketches = " << similarity << std::endl;
+    if (false && id == 0) {
+    	std::cout << "a = " << std::endl;
+    	for(int i = 0; i < a.size(); i++) {
+		std::cout << a[i] << "\t";
+	}
+    	std::cout << std::endl;
+    	std::cout << "b = " << std::endl;
+    }
 
+    if (id == 0) {
+    	auto s1 = sketch.cfinalize();
+    	auto s2 = sketch2.cfinalize();
+    	double similarity = s1.jaccard_index(s2);
+    	std::cout << "* similarity between sketches = " << similarity << std::endl;
+    }
+    
     MPI_Finalize();
     return 0;
 
