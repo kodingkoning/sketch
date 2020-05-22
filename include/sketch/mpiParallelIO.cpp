@@ -45,25 +45,27 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 
     RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
 
-	std::cout << "Created sketch objects..." << std::endl;
+	//std::cout << "Created sketch objects..." << std::endl;
 
     readFile(filename.c_str(), k, localSketch, nProcs, id);
-	std::cout << "Read FASTQ file and made local sketches..." << std::endl;
+	//std::cout << "Read FASTQ file and made local sketches..." << std::endl;
 
     sketchTime = MPI_Wtime();
 
     combineSketches(localSketch, globalSketch, nProcs, id); 
-	std::cout << "sketch from file local sketch size = " << localSketch.size() << " global sketch size = " << globalSketch.size() << std::endl;
-	std::cout << "Combined the sketches..." << std::endl;
+	//std::cout << "Combined the sketches..." << std::endl;
 
     gatherTime = MPI_Wtime();
 
     totalTime = MPI_Wtime() - startTime;
-    std::cout << "\n* Threshold calculation time = \t" << (threshTime - startTime) << std::endl;
-    std::cout << "\n* Local sketching time = \t" << (sketchTime - threshTime) << std::endl;
-    std::cout << "\n* Sketch gather time = \t\t" << (gatherTime - sketchTime) << std::endl;
-    std::cout << "\n* Total Cal_DisKS time = \t" << (totalTime - startTime) << std::endl;
 
+    if (id == 0) {
+	std::cout << "For file " << filename << ": " << std::endl;
+    	std::cout << " * Threshold calculation time = " << (threshTime - startTime) << std::endl;
+    	std::cout << " * Local sketching time = \t" << (sketchTime - threshTime) << std::endl;
+    	std::cout << " * Sketch combine time = \t" << (gatherTime - sketchTime) << std::endl;
+    	std::cout << " * Total Cal_DisKS time = \t" << (totalTime) << std::endl;
+    }
 }
 
 int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id)
@@ -101,13 +103,13 @@ int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, i
 
 	totalTime = MPI_Wtime() - startTime;
 
-	if (id == 0)
-	{
+	//if (id == 0)
+	//{
 		// printf("The sum of the values in the input file '%s' is %g\n",
 		// 	   fileName, sum);
 
-		printf("For %d processes:\nioTime\t\tscatterTime\tsumTime\t\ttotalTime\n%f\t%f\t%f\t%f\n\n", nProcs, ioTime, scatterTime, sumTime, totalTime);
-	}
+		//printf("For %d processes and file %s:\nioTime\t\tscatterTime\tsumTime\t\ttotalTime\n%f\t%f\t%f\t%f\n\n", nProcs, fileName, ioTime, scatterTime, sumTime, totalTime);
+	//}
 
 	if (id == 0 && !parallelIO)
 		free(allA);
@@ -351,13 +353,9 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 
 	if(id == 0) {
 		for (unsigned i = 0; i < num_vals*nProcs; i++) {
-			std::cout << "size of sketch = " << globalSketch.size() << " at i = " << i << std::endl;
 			globalSketch.addh(global_data[i]);
-			//std::cout << global_data[i] << std::endl;
 		}
 	}
-
-	std::cout << "process " << id << " has sketch size of " << globalSketch.size() << std::endl;
 
 	delete [] global_data;
 }
