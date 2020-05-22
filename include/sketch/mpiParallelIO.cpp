@@ -27,7 +27,6 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 	int nProcs, id;
     double startTime, totalTime, threshTime, sketchTime, gatherTime;
 
-    // MPI_Init(NULL, NULL);
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
 
@@ -56,8 +55,6 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     std::cout << "\n* Local sketching time = \t" << (sketchTime - threshTime) << std::endl;
     std::cout << "\n* Sketch gather time = \t\t" << (gatherTime - sketchTime) << std::endl;
     std::cout << "\n* Total Cal_DisKS time = \t" << (totalTime - startTime) << std::endl;
-
-    // MPI_Finalize();
 }
 
 int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id)
