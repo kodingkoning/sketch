@@ -13,6 +13,7 @@ using namespace common;
 using namespace mh;
 
 int main(int argc, char *argv[]) {
+    int id;
     if (argc < 3) {
         fprintf(stderr, "\n*** Usage: caldiskstest <inputFile1> <inputFile2>\n\n");
         exit(1);
@@ -24,17 +25,23 @@ int main(int argc, char *argv[]) {
     std::string filename2 = dir + "/" + fastq_file2;
 
     MPI_Init(NULL, NULL);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
     RangeMinHash<uint64_t> sketch(LOCAL_SKETCH_SIZE);
     sketchFromFile(filename1, sketch);
 
     RangeMinHash<uint64_t> sketch2(LOCAL_SKETCH_SIZE);
     sketchFromFile(filename2, sketch2);
+    
+    vector<uint64_t> a = sketch2.mh2vec();
+    vector<uint64_t> b = sketch.mh2vec();
 
-    auto s1 = sketch.cfinalize();
-    auto s2 = sketch2.cfinalize();
-    double similarity = s1.jaccard_index(s2);
-    std::cout << "* similarity between sketches = " << similarity << std::endl;
-
+    if (id == 0) {
+    	auto s1 = sketch.cfinalize();
+    	auto s2 = sketch2.cfinalize();
+    	double similarity = s1.jaccard_index(s2);
+    	std::cout << "* similarity between sketches = " << similarity << std::endl;
+    }
+    
     MPI_Finalize();
     return 0;
 }
