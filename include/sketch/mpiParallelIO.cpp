@@ -1,12 +1,5 @@
-/* arraySum.c uses an array to sum the values in an input file,
-*  whose name is specified on the command-line.
-* Joel Adams, Fall 2005
-* for CS 374 (HPC) at Calvin College.
-*
-* MPI parallelism added by Elizabeth Koning, Fall 2019
-* for CS 374 (HPC) at Calvin University.
-*
-* Modified to read chars for k-mers by Elizabeth Koning, Spring 2020
+/* mpiParallelIO.cpp handles the parallel I/O for Cal-DisKS
+* Elizabeth Koning, Spring 2020
 * for Senior Project at Calvin University.
 */
 
@@ -29,8 +22,8 @@ void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nPr
 void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch);
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id);
 
-void sketchFromFile(std::string filename, RangeMinHash<uint64_t> globalSketch) { // TODO: save the sketch back to the caldiskstest well
-    int k = 7; // k = 21 is the default for Mash
+void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) {
+    int k = 21; // k = 21 is the default for Mash. It should not go above 32 because it must be represented by an 64 bit unsigned int.
 	int nProcs, id;
     double startTime, totalTime, threshTime, sketchTime, gatherTime;
 
@@ -71,47 +64,24 @@ int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, i
 {
 	int allCount, localCount;
 	char *a;
-	char *allA;
-	double startTime, sumTime, ioTime, scatterTime, totalTime;
-	bool parallelIO = true;
+	double startTime, sketchTime, ioTime, totalTime;
 
 	startTime = MPI_Wtime();
 
-	if (parallelIO)
-	{
-		parallelReadArray(fileName, &a, &localCount, id, nProcs);
-		ioTime = MPI_Wtime() - startTime;
-		scatterTime = 0;
-	}
-	else
-	{
-		if (id == 0)
-		{
-			readArray(fileName, &allA, &allCount);
-		}
-		ioTime = MPI_Wtime() - startTime;
-		scatterArray(&a, &allA, &allCount, &localCount, id, nProcs);
-		scatterTime = MPI_Wtime() - ioTime - startTime;
-	}
+	parallelReadArray(fileName, &a, &localCount, id, nProcs);
+	ioTime = MPI_Wtime() - startTime;
 
-	// addToSketch(kmers);
 	sketchKmers(a, localCount, k, localSketch);
-	// instead of finding the sum of numbers, we will be adding the values to a MinHash sketch
 
-	sumTime = MPI_Wtime() - startTime - ioTime - scatterTime;
+	sketchTime = MPI_Wtime() - startTime - ioTime;
 
 	totalTime = MPI_Wtime() - startTime;
 
 	if (id == 0)
 	{
-		// printf("The sum of the values in the input file '%s' is %g\n",
-		// 	   fileName, sum);
-
-		printf("For %d processes:\nioTime\t\tscatterTime\tsumTime\t\ttotalTime\n%f\t%f\t%f\t%f\n\n", nProcs, ioTime, scatterTime, sumTime, totalTime);
+		printf("For %d processes:\nioTime\t\tsketchTime\t\ttotalTime\n%f\t%f\t%f\t%f\n\n", nProcs, ioTime, sketchTime, totalTime);
 	}
 
-	if (id == 0 && !parallelIO)
-		free(allA);
 	free(a);
 	return 0;
 }
@@ -122,9 +92,9 @@ int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, i
  * 		n, the address of an int,
  * 		id, an int id of the current process,
  * 		nProcs, an int number of MPI processes.
- * PRE: fileName contains N, followed by N double values.
+ * PRE: fileName contains k-mers, and may contain other characters.
  * POST: a points to a dynamically allocated array 
- * 	containing N / nProcs values from fileName and n * nProcs == N.
+ * 	containing file size / nProcs values from fileName.
  */
 void parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs)
 {
@@ -174,104 +144,8 @@ void parallelReadArray(const char *fileName, char **a, int *n, int id, int nProc
 	*a = buffer;
 }
 
-/* readArray fills an array with values from a file.
-* Receive: fileName, a char*,
-*          a, the address of a pointer to an array,
-*          n, the address of an int.
-* PRE: fileName contains N, followed by N double values.
-* POST: a points to a dynamically allocated array
-*        containing the N values from fileName
-*        and n == N.
-*/
-void readArray(const char *fileName, char **a, int *n)
-{
-	// TODO: handle the case where we can't store all of it in memory and need to divide it up as we read
-	int count, howMany;
-	char *tempA;
-	FILE *fin;
-	struct stat sb;
-
-	fin = fopen(fileName, "r");
-	if (fin == NULL)
-	{
-		fprintf(stderr, "\n*** Unable to open input file '%s'\n\n",
-				fileName);
-		exit(1);
-	}
-
-    if(stat(fileName, &sb) == -1) {
-        perror("stat");
-        exit(EXIT_FAILURE);
-    }
-    long long size = sb.st_size; // size is in bytes, which is equal to chars
-    long long bases = size / 2;
-    std::fprintf(stderr, "Size of %s is %lld bytes, or about %lld bases\n", fileName, size, bases);
-	howMany = size;
-
-	tempA = (char*)calloc(howMany, sizeof(char));
-	if (tempA == NULL)
-	{
-		fprintf(stderr, "\n*** Unable to allocate %d-length array",
-				howMany);
-		exit(1);
-	}
-
-	// TODO: improve this section, initially designed for doubles and can be simpler with chars
-	// however, this code should not be used with Cal-DisKS because the point is to use MPI parallel I/O
-	for (count = 0; count < howMany; count++)
-		fscanf(fin, "%s", &tempA[count]);
-
-	fclose(fin);
-
-	*n = howMany;
-	*a = tempA;
-}
-
-/* scatterArray scatters the results to each process.
- * Receive:	a, the address of a pointer to an array,
- * 		allA, the address of a pointer to an array,
- * 		total, an address to an int number of elements in allA,
- * 		n, the address of an int,
- * 		id, an int id of the current process,
- * 		nProcs, an int number of MPI processes.
- * PRE: allA is filled with total number of values.
- * POST: the values in allA are scattered to a, which will contain n items.
- */
-void scatterArray(char **a, char **allA, int *total, int *n, int id, int nProcs)
-{
-	int chunkSize, remainder, i;
-	int *chunkSizes;
-	int *displacements;
-	char *tempA;
-
-	MPI_Bcast(total, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-	chunkSize = *total / nProcs;
-	chunkSizes = (int*)calloc(nProcs, sizeof(int));
-	displacements = (int*)calloc(nProcs, sizeof(int));
-	for (i = 0; i < nProcs; ++i)
-	{
-		chunkSizes[i] = chunkSize;
-		displacements[i] = chunkSize * i;
-	}
-	remainder = *total % nProcs;
-	if (remainder)
-	{
-		chunkSizes[nProcs - 1] += remainder;
-	}
-	tempA = (char*)calloc(chunkSizes[id], sizeof(char));
-
-	MPI_Scatterv(*allA, chunkSizes, displacements, MPI_CHAR, tempA, chunkSizes[id], MPI_CHAR, 0, MPI_COMM_WORLD);
-
-	*n = chunkSizes[id];
-	*a = tempA;
-	free(chunkSizes);
-	free(displacements);
-}
-
 /* complemenntbase() and reversecomplement() come from BELLA code
  */
-
 char
 complementbase(char n) {
 	switch(n)
@@ -315,8 +189,10 @@ inline uint64_t kmer_int(const char *s) {
 
 /* sketchKmers adds the kmers in the data read to a Minhash sketch
  * Receive: a, a pointer to the head of an array;
- * 			numValues, the number of chars in the array.
- * Return: the MinHash sketch with the k-mers
+ * 			numValues, the number of chars in the array;
+ * 			k, the number of bases in a k-mer;
+ * 			kmerSketch, the empty sketch to fill with k-mers;
+ * Postcondition: kmerSketch is filled with k-mers from a.
  */
 void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch) {
 	std::string kmer = "";
@@ -340,6 +216,13 @@ void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSke
 	}
 }
 
+/* combineSketches adds the kmers in the data read to a Minhash sketch
+ * Receive: localSketch, the local sketch for easy MPI process;
+ * 			globalSketch, the global sketch for process 0 to gather the hash values;
+ * 			nProcs, the number of MPI processes;
+ * 			id, the id of the current MPI process;
+ * Postcondition: globalSketch for process 0 has the minimum values from the local sketches.
+ */
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id) {
 	unsigned num_vals = localSketch.size();
 	uint64_t * local_data = localSketch.mh2vec().data();

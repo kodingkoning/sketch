@@ -1,3 +1,7 @@
+/* calcThreshold.cpp calculates the MinHash predicted threshold for Cal-DisKS
+* Elizabeth Koning, Spring 2020
+* for Senior Project at Calvin University.
+*/
 #include <sys/stat.h>
 #include <math.h>
 #include "mh.h"
@@ -52,7 +56,7 @@ BigInt find_threshold(std::string file, int k, int sketch_size) {
     // number of unique k-mers expected in the file
     BigInt unique_kmers = expected_unique(kmers, n);
 
-    // TODO: do something about the fact that expected_unique takes forever!
+    // TODO: make expected_unique more efficent for practical reasons
 
     // NOTE: this assumes that max = 2^64 and min = 0, 
     //      which is the case for WangHash used in sketch.
