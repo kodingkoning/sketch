@@ -16,13 +16,13 @@
 using namespace sketch;
 
 void readArray(const char * fileName, char ** a, int * n);
-int parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs, int k);
+int parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs, unsigned k);
 void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nProcs);
-void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch);
+void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch);
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id);
 
 void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) {
-    int k = 21; // k = 21 is the default for Mash. It should not go above 32 because it must be represented by an 64 bit unsigned int.
+    unsigned k = 21; // k = 21 is the default for Mash. It should not go above 32 because it must be represented by an 64 bit unsigned int.
 	int nProcs, id;
     double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime;
 	int allCount, localCount;
@@ -88,10 +88,9 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
  * POST: a points to a dynamically allocated array 
  * 	containing file size / nProcs values from fileName.
  */
-int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs, int k)
+int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs, unsigned k)
 {
-	int count, howMany, offset, chunkSize, remainder, headerLen, numLen, chunkChars;
-	const int DEFAULT_BUF_LEN = 10;
+	int offset, chunkSize, remainder;
 	int error;
 	MPI_File file;
 	MPI_Status status;
@@ -190,7 +189,7 @@ inline uint64_t kmer_int(const char *s) {
  * 			kmerSketch, the empty sketch to fill with k-mers;
  * Postcondition: kmerSketch is filled with k-mers from a.
  */
-void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch) {
+void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch) {
 	std::string kmer = "";
 	for(int i = 0; i < numValues; i++) {
 		if(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G') {
