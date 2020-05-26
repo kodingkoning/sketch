@@ -36,10 +36,13 @@ int main(int argc, char *argv[]) {
     vector<uint64_t> b = sketch.mh2vec();
 
     if (id == 0) {
+        double startTime = MPI_Wtime();
     	auto s1 = sketch.cfinalize();
     	auto s2 = sketch2.cfinalize();
     	double similarity = s1.jaccard_index(s2);
+        double compareTime = MPI_Wtime() - startTime;
     	std::cout << "* similarity between sketches = " << similarity << std::endl;
+        std::cout << "* compare time = " << compareTime << std::endl;
     }
     
     MPI_Finalize();
