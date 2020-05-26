@@ -15,7 +15,6 @@
 
 using namespace sketch;
 
-int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id);
 void readArray(const char * fileName, char ** a, int * n);
 void parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs);
 void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nProcs);
@@ -25,7 +24,9 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) {
     int k = 21; // k = 21 is the default for Mash. It should not go above 32 because it must be represented by an 64 bit unsigned int.
 	int nProcs, id;
-    double startTime, totalTime, threshTime, sketchTime, gatherTime;
+    double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime;
+	int allCount, localCount;
+	char *a;
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
@@ -38,40 +39,29 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 
     RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
 
-	//std::cout << "Created sketch objects..." << std::endl;
+	parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs);
+	ioTime = MPI_Wtime();
 
-    readFile(filename.c_str(), k, localSketch, nProcs, id);
-	//std::cout << "Read FASTQ file and made local sketches..." << std::endl;
+	sketchKmers(a, localCount, k, localSketch);
+
+	free(a);
 
     sketchTime = MPI_Wtime();
 
     combineSketches(localSketch, globalSketch, nProcs, id); 
-	//std::cout << "Combined the sketches..." << std::endl;
 
     gatherTime = MPI_Wtime();
 
     totalTime = MPI_Wtime() - startTime;
 
     if (id == 0) {
-		std::cout << "For file " << filename << ": " << std::endl;
+		std::cout << "For file " << filename << " with " << nProcs << "processes: " << std::endl;
     	std::cout << " * Threshold calculation time = " << (threshTime - startTime) << std::endl;
-    	std::cout << " * Local sketching time = \t" << (sketchTime - threshTime) << std::endl;
+    	std::cout << " * Parallel read from file time = " << (ioTime - threshTime) << std::endl;
+    	std::cout << " * Local sketching time = \t" << (sketchTime - ioTime) << std::endl;
     	std::cout << " * Sketch combine time = \t" << (gatherTime - sketchTime) << std::endl;
     	std::cout << " * Total Cal_DisKS time = \t" << (totalTime) << std::endl;
     }
-}
-
-int readFile(const char *fileName, int k, RangeMinHash<uint64_t>& localSketch, int nProcs, int id)
-{
-	int allCount, localCount;
-	char *a;
-
-	parallelReadArray(fileName, &a, &localCount, id, nProcs);
-
-	sketchKmers(a, localCount, k, localSketch);
-
-	free(a);
-	return 0;
 }
 
 /* parallelReadArray fills an array with values from a file.
