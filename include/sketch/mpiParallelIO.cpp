@@ -16,7 +16,7 @@
 using namespace sketch;
 
 void readArray(const char * fileName, char ** a, int * n);
-void parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs);
+int parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs, int k);
 void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nProcs);
 void sketchKmers(char* a, int numValues, int k, RangeMinHash<uint64_t> & kmerSketch);
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id);
@@ -39,7 +39,20 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 
     RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
 
-	parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs);
+	int readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
+	if(readStatus) {
+		// read in smaller chunks
+		int readChunks = 1;
+		while(readStatus) {
+			readChunks *= 2;
+			for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
+				readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
+				if (readStatus) break;
+				sketchKmers(a, localCount, k, localSketch);
+				free(a);
+			}			
+		}
+	}
 	ioTime = MPI_Wtime();
 
 	sketchKmers(a, localCount, k, localSketch);
@@ -69,12 +82,13 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
  * 		a, the address of a pointer to an array,
  * 		n, the address of an int,
  * 		id, an int id of the current process,
- * 		nProcs, an int number of MPI processes.
+ * 		nProcs, an int number of MPI processes
+ * 		k, an int for the length of the k-mers.
  * PRE: fileName contains k-mers, and may contain other characters.
  * POST: a points to a dynamically allocated array 
  * 	containing file size / nProcs values from fileName.
  */
-void parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs)
+int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs, int k)
 {
 	int count, howMany, offset, chunkSize, remainder, headerLen, numLen, chunkChars;
 	const int DEFAULT_BUF_LEN = 10;
@@ -100,17 +114,20 @@ void parallelReadArray(const char *fileName, char **a, int *n, int id, int nProc
 
 	// find size of each process's chunk
 	chunkSize = fileSize / nProcs;
-	offset = id * chunkSize; // TODO: add room on either end to handle not losing k-mers between reads
+	offset = id * chunkSize;
 	remainder = chunkSize % nProcs;
 	if (remainder && id == nProcs - 1)
 	{
 		chunkSize += remainder;
 	}
+	if (offset + chunkSize + k < fileSize) { // adds room on end to account for k-mers in part of each I/O section
+		chunkSize += k;
+	}
 
 	buffer = (char *)calloc(chunkSize + 1, sizeof(char));
 	if (buffer == NULL)
 	{
-		fprintf(stderr, "\n** Unable to allocate %d-length array", chunkSize);
+		return 1;
 	}
 	MPI_File_read_at(file, offset, buffer, chunkSize, MPI_CHAR, &status);
 	// buffer will contain all of the chars
@@ -120,6 +137,7 @@ void parallelReadArray(const char *fileName, char **a, int *n, int id, int nProc
 
 	*n = chunkSize;
 	*a = buffer;
+	return 0;
 }
 
 /* complemenntbase() and reversecomplement() come from BELLA code
