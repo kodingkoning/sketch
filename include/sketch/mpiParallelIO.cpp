@@ -52,14 +52,14 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 				free(a);
 			}			
 		}
+		ioTime = MPI_Wtime();
+		sketchTime = ioTime;
+	} else {
+		ioTime = MPI_Wtime();
+		sketchKmers(a, localCount, k, localSketch);
+		free(a);
+    	sketchTime = MPI_Wtime();
 	}
-	ioTime = MPI_Wtime();
-
-	sketchKmers(a, localCount, k, localSketch);
-
-	free(a);
-
-    sketchTime = MPI_Wtime();
 
     combineSketches(localSketch, globalSketch, nProcs, id); 
 
