@@ -67,10 +67,10 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     	sketchTime = MPI_Wtime();
 	}
 
-	if(debug) std::cout << "Local sketching complete." << std::endl;
+	if(debug) std::cout << "Process " << id << ": Local sketching complete." << std::endl;
 
     combineSketches(localSketch, globalSketch, nProcs, id); 
-	if(debug) std::cout << "sketches combined" << std::endl;
+	if(debug) std::cout << "Process " << id << ": Sketches combined." << std::endl;
 
     gatherTime = MPI_Wtime();
 
@@ -232,8 +232,13 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 	unsigned num_vals = localSketch.size();
 	uint64_t * local_data = localSketch.mh2vec().data();
 	uint64_t * global_data = NULL;
+
 	if(id == 0) {
 		global_data = new uint64_t[num_vals*nProcs];
+		if(global_data == NULL) {
+			std::cout << "Unable to allocate array for global data, so cannot gather" << std::endl;
+			return;
+		}
 	}
 
 	MPI_Gather(local_data, num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
