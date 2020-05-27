@@ -25,7 +25,8 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     unsigned k = 21; // k = 21 is the default for Mash. It should not go above 32 because it must be represented by an 64 bit unsigned int.
 	int nProcs, id;
     double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime;
-	int allCount, localCount;
+	int localCount;
+	int readChunks = 1;
 	char *a;
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
@@ -40,24 +41,22 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
 
 	int readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
-	if(readStatus) {
-		// read in smaller chunks
-		int readChunks = 1;
-		while(readStatus) {
-			readChunks *= 2;
-			for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
-				readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
-				if (readStatus) break;
+	while(readStatus) {
+		readChunks *= 2;
+		for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
+			readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
+			if(readStatus) {
+				chunkIndex = readChunks;
+			}
+			else {
 				sketchKmers(a, localCount, k, localSketch);
 				free(a);
-			}
-			if(id == 0) {
-				std::cout << "Read process's chunk in " << readChunks << " sections." << std::endl;
 			}
 		}
 		ioTime = MPI_Wtime();
 		sketchTime = ioTime;
-	} else {
+	}
+	if(readChunks == 1) {
 		ioTime = MPI_Wtime();
 		sketchKmers(a, localCount, k, localSketch);
 		free(a);
@@ -72,6 +71,7 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 
     if (id == 0) {
 		std::cout << "For file " << filename << " with " << nProcs << " processes: " << std::endl;
+		std::cout << " * used " << readChunks << " chunks to read file per process." << std::endl;
     	std::cout << " * Threshold calculation time = " << (threshTime - startTime) << std::endl;
     	std::cout << " * Parallel read from file time = " << (ioTime - threshTime) << std::endl;
     	std::cout << " * Local sketching time = \t" << (sketchTime - ioTime) << std::endl;
