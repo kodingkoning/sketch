@@ -68,7 +68,7 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     totalTime = MPI_Wtime() - startTime;
 
     if (id == 0) {
-		std::cout << "For file " << filename << " with " << nProcs << "processes: " << std::endl;
+		std::cout << "For file " << filename << " with " << nProcs << " processes: " << std::endl;
     	std::cout << " * Threshold calculation time = " << (threshTime - startTime) << std::endl;
     	std::cout << " * Parallel read from file time = " << (ioTime - threshTime) << std::endl;
     	std::cout << " * Local sketching time = \t" << (sketchTime - ioTime) << std::endl;

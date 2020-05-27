@@ -18,11 +18,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "\n*** Usage: caldiskstest <inputFile1> <inputFile2>\n\n");
         exit(1);
     }
-    std::string fastq_file1 = argv[1];
-    std::string fastq_file2 = argv[2];
-    std::string dir = get_current_dir_name();
-    std::string filename1 = dir+"/" + fastq_file1;
-    std::string filename2 = dir + "/" + fastq_file2;
+    std::string filename1 = argv[1];
+    std::string filename2 = argv[2];
+    // std::string dir = get_current_dir_name();
+    // std::string filename1 = dir+"/" + fastq_file1;
+    // std::string filename2 = dir + "/" + fastq_file2;
 
     MPI_Init(NULL, NULL);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
