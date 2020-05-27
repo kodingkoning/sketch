@@ -50,7 +50,10 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 				if (readStatus) break;
 				sketchKmers(a, localCount, k, localSketch);
 				free(a);
-			}			
+			}
+			if(id == 0) {
+				std::cout << "Read process's chunk in " << readChunks << " sections." << std::endl;
+			}
 		}
 		ioTime = MPI_Wtime();
 		sketchTime = ioTime;
