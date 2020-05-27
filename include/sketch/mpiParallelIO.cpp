@@ -28,6 +28,7 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 	int localCount;
 	int readChunks = 1;
 	char *a;
+	bool debug = true;
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
@@ -41,8 +42,10 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
 
 	int readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
+	if(debug) std::cout << "parallelReadArray() done" << std::endl;
 	while(readStatus) {
 		readChunks *= 2;
+		if(debug) std::cout << "splitting read chunks to " << readChunks << std::endl; 
 		for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
 			readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
 			if(readStatus) {
@@ -51,6 +54,7 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 			else {
 				sketchKmers(a, localCount, k, localSketch);
 				free(a);
+				if(debug) std::cout << "Process " << id << " sketched chunk " << id*readChunks+chunkIndex << " of " << nProcs*readChunks << std::endl;
 			}
 		}
 		ioTime = MPI_Wtime();
@@ -63,7 +67,10 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     	sketchTime = MPI_Wtime();
 	}
 
+	if(debug) std::cout << "Local sketching complete." << std::endl;
+
     combineSketches(localSketch, globalSketch, nProcs, id); 
+	if(debug) std::cout << "sketches combined" << std::endl;
 
     gatherTime = MPI_Wtime();
 
