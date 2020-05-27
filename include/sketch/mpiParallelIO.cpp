@@ -232,6 +232,7 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 	unsigned num_vals = localSketch.size();
 	uint64_t * local_data = localSketch.mh2vec().data();
 	uint64_t * global_data = NULL;
+	int error_code;
 
 	if(id == 0) {
 		global_data = new uint64_t[num_vals*nProcs];
@@ -241,7 +242,14 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 		}
 	}
 
-	MPI_Gather(local_data, num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
+	error_code = MPI_Gather(local_data, num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
+	
+	if(error_code != MPI_SUCCESS) {
+		char error_string[BUFSIZ];
+		int length_of_error_string;
+		MPI_Error_string(error_code, error_string, &length_of_error_string);
+		fprintf(stderr, "%3d: %s\n", id, error_string);
+	}
 
 	if(id == 0) {
 		for (unsigned i = 0; i < num_vals*nProcs; i++) {
