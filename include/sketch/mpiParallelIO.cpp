@@ -229,7 +229,7 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
  * Postcondition: globalSketch for process 0 has the minimum values from the local sketches.
  */
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id) {
-	unsigned num_vals = localSketch.size();
+	unsigned num_vals = localSketch.sketch_size();
 	uint64_t * local_data = localSketch.mh2vec().data();
 	uint64_t * global_data = NULL;
 	int error_code;
@@ -243,7 +243,7 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 	}
 
 	error_code = MPI_Gather(local_data, num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
-	
+
 	if(error_code != MPI_SUCCESS) {
 		char error_string[BUFSIZ];
 		int length_of_error_string;
