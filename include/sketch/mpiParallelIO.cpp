@@ -209,9 +209,9 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
 				std::string twin = reversecomplement(kmer);
 				if (twin < kmer) {
-					kmerSketch.add(kmer_int(twin.c_str()));
+					kmerSketch.addh(kmer_int(twin.c_str()));
 				} else {
-					kmerSketch.add(kmer_int(kmer.c_str()));
+					kmerSketch.addh(kmer_int(kmer.c_str()));
 				}
 				kmer = kmer.substr(1, k-1) + a[i];
 			}
