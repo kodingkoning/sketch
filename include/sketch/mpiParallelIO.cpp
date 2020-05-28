@@ -15,6 +15,8 @@
 
 using namespace sketch;
 
+bool debug = true;
+
 void readArray(const char * fileName, char ** a, int * n);
 int parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs, unsigned k);
 void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nProcs);
@@ -28,7 +30,6 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 	int localCount;
 	int readChunks = 1;
 	char *a;
-	bool debug = false;
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
@@ -139,6 +140,7 @@ int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs
 		return 1;
 	}
 	MPI_File_read_at(file, offset, buffer, chunkSize, MPI_CHAR, &status);
+	if(debug) std::cout << "Process " << id << ": file size = " << fileSize << " and chunk size = " << chunkSize << std::endl;
 
 	MPI_File_close(&file);
 
@@ -199,11 +201,12 @@ inline uint64_t kmer_int(const char *s) {
  */
 void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch) {
 	std::string kmer = "";
-	for(int i = 0; i < numValues; i++) {
+	for(int i = 0; i < numValues; ++i) {
 		if(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G') {
 			if(kmer.length() < k) {
 				kmer.push_back(a[i]);
-			} else {
+			}
+			if(kmer.length() == k) {
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
 				std::string twin = reversecomplement(kmer);
 				if (twin < kmer) {
@@ -211,7 +214,7 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
 				} else {
 					kmerSketch.addh(kmer_int(kmer.c_str()));
 				}
-				kmer = kmer.substr(1, k-1) + a[i];
+				kmer = kmer.substr(1, k-1) + a[i]; // start at 1 and get k-1 chars
 			}
 		} else {
 			kmer = "";
