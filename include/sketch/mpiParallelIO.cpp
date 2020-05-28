@@ -28,7 +28,7 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
 	int localCount;
 	int readChunks = 1;
 	char *a;
-	bool debug = true;
+	bool debug = false;
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);

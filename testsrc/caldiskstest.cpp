@@ -20,9 +20,6 @@ int main(int argc, char *argv[]) {
     }
     std::string filename1 = argv[1];
     std::string filename2 = argv[2];
-    // std::string dir = get_current_dir_name();
-    // std::string filename1 = dir+"/" + fastq_file1;
-    // std::string filename2 = dir + "/" + fastq_file2;
 
     MPI_Init(NULL, NULL);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
@@ -32,9 +29,6 @@ int main(int argc, char *argv[]) {
     RangeMinHash<uint64_t> sketch2(LOCAL_SKETCH_SIZE);
     sketchFromFile(filename2, sketch2);
     
-    vector<uint64_t> a = sketch2.mh2vec();
-    vector<uint64_t> b = sketch.mh2vec();
-
     if (id == 0) {
         double startTime = MPI_Wtime();
     	auto s1 = sketch.cfinalize();
