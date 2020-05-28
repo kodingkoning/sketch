@@ -124,7 +124,7 @@ int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs
 	// find size of each process's chunk
 	chunkSize = fileSize / nProcs;
 	offset = id * chunkSize;
-	remainder = chunkSize % nProcs;
+	remainder = fileSize % nProcs;
 	if (remainder && id == nProcs - 1)
 	{
 		chunkSize += remainder;
@@ -139,8 +139,6 @@ int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs
 		return 1;
 	}
 	MPI_File_read_at(file, offset, buffer, chunkSize, MPI_CHAR, &status);
-	// buffer will contain all of the chars
-	// TODO: add buffer room at the ends so that we don't lose some of the k-mers
 
 	MPI_File_close(&file);
 
