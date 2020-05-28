@@ -37,6 +37,20 @@ int main(int argc, char *argv[]) {
         double compareTime = MPI_Wtime() - startTime;
     	std::cout << "* similarity between sketches = " << similarity << std::endl;
         std::cout << "* compare time = " << compareTime << std::endl;
+
+        vector<uint64_t> a = sketch2.mh2vec();
+        vector<uint64_t> b = sketch.mh2vec();
+
+        std::cout << "C. elegans sketch = " << std::endl;
+        for(auto ir = a.cbegin(); ir != a.cend(); ++ir) {
+            std::cout << *ir << "\n";
+        }
+        std::cout << std::endl;
+        std::cout << "\nE. coli sketch = " << std::endl;
+        for(auto ir = b.cbegin(); ir != b.cend(); ++ir) {
+            std::cout << *ir << "\n";
+        }
+        std::cout << std::endl;
     }
     
     MPI_Finalize();
