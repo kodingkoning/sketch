@@ -253,7 +253,7 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 
 	if(id == 0) {
 		for (unsigned i = 0; i < num_vals*nProcs; i++) {
-			globalSketch.addh(global_data[i]);
+			globalSketch.add(global_data[i]);
 		}
 	}
 
