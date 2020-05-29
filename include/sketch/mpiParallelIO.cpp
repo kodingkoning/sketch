@@ -44,10 +44,10 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, 
 
 	int readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
 	if(debug) std::cout << "parallelReadArray() done" << std::endl;
-	if(readStatus) {
+	/*if(readStatus) {
 		fprintf(stderr, "\n*** Unable to allocate memory to read the array.\n\n");
 		return;
-	}
+	}*/
 	//TODO: forcibly test if this actually works, at least if done once
 	ioTime = 0;
 	sketchTime = 0;
