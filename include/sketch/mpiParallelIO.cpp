@@ -15,16 +15,16 @@
 
 using namespace sketch;
 
-bool debug = true;
+bool debug = false;
 
 void readArray(const char * fileName, char ** a, int * n);
 int parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs, unsigned k);
 void scatterArray(char ** a, char ** allA, int * total, int * n, int id, int nProcs);
-void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch);
+void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch, int id);
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id);
+void sketchReduction(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int id, int nProcs);
 
-void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) {
-    unsigned k = 21; // k = 21 is the default for Mash. It should not go above 32 because it must be represented by an 64 bit unsigned int.
+void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, unsigned k) {
 	int nProcs, id;
     double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime;
 	int localCount;
@@ -40,37 +40,48 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch) 
     // BigInt threshold = find_threshold(filename, k, SKETCH_SIZE);
     threshTime = MPI_Wtime();
 
-    RangeMinHash<uint64_t> localSketch(LOCAL_SKETCH_SIZE);
+    RangeMinHash<uint64_t> localSketch(globalSketch.sketch_size());
 
 	int readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
 	if(debug) std::cout << "parallelReadArray() done" << std::endl;
-	while(readStatus) {
-		readChunks *= 2;
-		if(debug) std::cout << "splitting read chunks to " << readChunks << std::endl; 
-		for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
-			readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
-			if(readStatus) {
-				chunkIndex = readChunks;
-			}
-			else {
-				sketchKmers(a, localCount, k, localSketch);
-				free(a);
-				if(debug) std::cout << "Process " << id << " sketched chunk " << id*readChunks+chunkIndex << " of " << nProcs*readChunks << std::endl;
-			}
-		}
-		ioTime = MPI_Wtime();
-		sketchTime = ioTime;
+	if(readStatus) {
+		fprintf(stderr, "\n*** Unable to allocate memory to read the array.\n\n");
+		return;
 	}
-	if(readChunks == 1) {
-		ioTime = MPI_Wtime();
-		sketchKmers(a, localCount, k, localSketch);
-		free(a);
-    	sketchTime = MPI_Wtime();
-	}
+	// TODO: forcibly test if this actually works, at least if done once
+	// while(readStatus) {
+	// 	readChunks *= 2;
+	// 	if(debug) std::cout << "splitting read chunks to " << readChunks << std::endl; 
+	// 	for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
+	// 		readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
+	// 		if(readStatus) {
+	// 			chunkIndex = readChunks;
+	// 		}
+	// 		else {
+	// 			sketchKmers(a, localCount, k, localSketch);
+	// 			free(a);
+	// 			if(debug) std::cout << "Process " << id << " sketched chunk " << id*readChunks+chunkIndex << " of " << nProcs*readChunks << std::endl;
+	// 		}
+	// 	}
+	// 	ioTime = MPI_Wtime();
+	// 	sketchTime = ioTime;
+	// }
+	// if(readChunks == 1) {
+	// 	ioTime = MPI_Wtime();
+	// 	sketchKmers(a, localCount, k, localSketch);
+	// 	free(a);
+    // 	sketchTime = MPI_Wtime();
+	// }
+
+	ioTime = MPI_Wtime();
+	sketchKmers(a, localCount, k, localSketch, id);
+	free(a);
+	sketchTime = MPI_Wtime();
 
 	if(debug) std::cout << "Process " << id << ": Local sketching complete." << std::endl;
 
-    combineSketches(localSketch, globalSketch, nProcs, id); 
+    // combineSketches(localSketch, globalSketch, nProcs, id); // TODO: pick which approach is what we want
+	sketchReduction(localSketch, globalSketch, id, nProcs);
 	if(debug) std::cout << "Process " << id << ": Sketches combined." << std::endl;
 
     gatherTime = MPI_Wtime();
@@ -130,8 +141,8 @@ int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs
 	{
 		chunkSize += remainder;
 	}
-	if (offset + chunkSize + k < fileSize) { // adds room on end to account for k-mers in part of each I/O section
-		chunkSize += k;
+	if (id < nProcs -1) { // adds room on end to account for k-mers in part of each I/O section
+		chunkSize += k + 1;
 	}
 
 	buffer = (char *)calloc(chunkSize + 1, sizeof(char));
@@ -199,7 +210,7 @@ inline uint64_t kmer_int(const char *s) {
  * 			kmerSketch, the empty sketch to fill with k-mers;
  * Postcondition: kmerSketch is filled with k-mers from a.
  */
-void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch) {
+void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch, int id) {
 	std::string kmer = "";
 	for(int i = 0; i < numValues; ++i) {
 		if(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G') {
@@ -210,8 +221,10 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
 				std::string twin = reversecomplement(kmer);
 				if (twin < kmer) {
+					if(kmer_int(twin.c_str()) == 0) std::cout << "Process " << id << ": found k-mer that hashes to 0." << std::endl;
 					kmerSketch.addh(kmer_int(twin.c_str()));
 				} else {
+					if(kmer_int(kmer.c_str()) == 0) std::cout << "Process " << id << ": found k-mer that hashes to 0." << std::endl;
 					kmerSketch.addh(kmer_int(kmer.c_str()));
 				}
 				kmer = kmer.substr(1, k-1) + a[i]; // start at 1 and get k-1 chars
@@ -230,20 +243,37 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
  * Postcondition: globalSketch for process 0 has the minimum values from the local sketches.
  */
 void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int nProcs, int id) {
+
+	if(nProcs == 1) {
+		// TODO: decide if this simplification should stay
+		globalSketch += localSketch;
+		return;
+	}
+
 	unsigned num_vals = localSketch.sketch_size();
-	uint64_t * local_data = localSketch.mh2vec().data();
+	vector<uint64_t> local_data = localSketch.mh2vec();
 	uint64_t * global_data = NULL;
 	int error_code;
 
 	if(id == 0) {
-		global_data = new uint64_t[num_vals*nProcs];
+		global_data = (uint64_t *)calloc(num_vals*nProcs, sizeof(uint64_t));
 		if(global_data == NULL) {
 			std::cout << "Unable to allocate array for global data, so cannot gather" << std::endl;
 			return;
 		}
 	}
 
-	error_code = MPI_Gather(local_data, num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
+	if(debug) {
+		if(localSketch.min_element() == 0) {
+			std::cout << "Process " << id << ": minimum element is 0"<< std::endl;
+		} else {
+			std::cout << "Process " << id << ": minimum element is not 0!"<< std::endl;
+		}
+	}
+
+	if(debug) std::cout << "Process " << id << ": size = " << localSketch.size() << " and capacity = " << localSketch.sketch_size() << std::endl;
+
+	error_code = MPI_Gather(local_data.data(), num_vals,  MPI_UNSIGNED_LONG_LONG, global_data, num_vals, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
 
 	if(error_code != MPI_SUCCESS) {
 		char error_string[BUFSIZ];
@@ -259,4 +289,30 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 	}
 
 	delete [] global_data;
+}
+
+void sketchReduction(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int id, int nProcs) {
+	int n;
+	int n_vals = localSketch.sketch_size();
+	vector<uint64_t> local_data = localSketch.mh2vec();
+	uint64_t * buffer = (uint64_t *)calloc(n_vals, sizeof(uint64_t));
+	for(n = 1; n < nProcs; n *= 2) {
+		// TODO: id receives, id+n sends data
+		if( id%(n*2) == 0 && id+n < nProcs) {
+			// TODO: receive data from id + n
+			if(debug) std::cout << "receiving to " << id << " from " << id+n << std::endl;
+			MPI_Recv(buffer, n_vals, MPI_UNSIGNED_LONG_LONG, id+n, 0, MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+			for(int i = 0; i < n_vals; ++i) {
+				localSketch.add(buffer[i]);
+			}
+		} else if((id-n)%(n*2) == 0) {
+			// TODO: send data to id - n
+			if(debug) std::cout << "sending from " << id << " to " << id-n << std::endl;
+			MPI_Send(local_data.data(), local_data.size(), MPI_UNSIGNED_LONG_LONG, id-n, 0, MPI_COMM_WORLD);
+		}
+	}
+
+	if(id == 0) {
+		globalSketch += localSketch;
+	}
 }
