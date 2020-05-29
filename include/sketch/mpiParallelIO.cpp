@@ -26,7 +26,7 @@ void sketchReduction(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 
 void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, unsigned k) {
 	int nProcs, id;
-    double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime;
+    double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime, tempTime;
 	int localCount;
 	int readChunks = 1;
 	char *a;
@@ -48,35 +48,41 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, 
 		fprintf(stderr, "\n*** Unable to allocate memory to read the array.\n\n");
 		return;
 	}
-	// TODO: forcibly test if this actually works, at least if done once
-	// while(readStatus) {
-	// 	readChunks *= 2;
-	// 	if(debug) std::cout << "splitting read chunks to " << readChunks << std::endl; 
-	// 	for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
-	// 		readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
-	// 		if(readStatus) {
-	// 			chunkIndex = readChunks;
-	// 		}
-	// 		else {
-	// 			sketchKmers(a, localCount, k, localSketch);
-	// 			free(a);
-	// 			if(debug) std::cout << "Process " << id << " sketched chunk " << id*readChunks+chunkIndex << " of " << nProcs*readChunks << std::endl;
-	// 		}
-	// 	}
-	// 	ioTime = MPI_Wtime();
-	// 	sketchTime = ioTime;
-	// }
-	// if(readChunks == 1) {
-	// 	ioTime = MPI_Wtime();
-	// 	sketchKmers(a, localCount, k, localSketch);
-	// 	free(a);
-    // 	sketchTime = MPI_Wtime();
-	// }
+	//TODO: forcibly test if this actually works, at least if done once
+	ioTime = 0;
+	sketchTime = 0;
+	while(readStatus) {
+		readChunks *= 2;
+		if(debug) std::cout << "splitting read chunks to " << readChunks << std::endl;
+		for(int chunkIndex = 0; chunkIndex < readChunks; chunkIndex++) {
+			tempTime = MPI_Wtime();
+			readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id*readChunks + chunkIndex, nProcs*readChunks, k);
+			ioTime += MPI_Wtime() - tempTime;
+			if(readStatus) {
+				chunkIndex = readChunks;
+			}
+			else {
+				tempTime = MPI_Wtime();
+				sketchKmers(a, localCount, k, localSketch, id);
+				free(a);
+				if(debug) std::cout << "Process " << id << " sketched chunk " << id*readChunks+chunkIndex << " of " << nProcs*readChunks << std::endl;
+				sketchTime += MPI_Wtime() - tempTime;
+			}
+		}
+		ioTime = threshTime + ioTime;
+		sketchTime = ioTime + sketchTime;
+	}
+	if(readChunks == 1) {
+		ioTime = MPI_Wtime();
+		sketchKmers(a, localCount, k, localSketch, id);
+		free(a);
+    	sketchTime = MPI_Wtime();
+	}
 
-	ioTime = MPI_Wtime();
-	sketchKmers(a, localCount, k, localSketch, id);
-	free(a);
-	sketchTime = MPI_Wtime();
+	// ioTime = MPI_Wtime();
+	// sketchKmers(a, localCount, k, localSketch, id);
+	// free(a);
+	// sketchTime = MPI_Wtime();
 
 	if(debug) std::cout << "Process " << id << ": Local sketching complete." << std::endl;
 
