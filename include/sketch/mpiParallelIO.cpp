@@ -15,7 +15,7 @@
 
 using namespace sketch;
 
-bool debug = false;
+bool debug = true;
 
 void readArray(const char * fileName, char ** a, int * n);
 int parallelReadArray(const char * fileName, char ** a, int * n, int id, int nProcs, unsigned k);
@@ -25,11 +25,13 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 void sketchReduction(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int id, int nProcs);
 
 void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, unsigned k) {
-	int nProcs, id;
-    double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime, tempTime;
+	int nProcs, id, error, minChunks, chunksPerProc;
+	double startTime, totalTime, threshTime, ioTime, sketchTime, gatherTime, tempTime;
 	int localCount;
 	int readChunks = 1;
 	char *a;
+	MPI_File file;
+	MPI_Offset fileSize;
 
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
@@ -41,13 +43,68 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, 
     threshTime = MPI_Wtime();
 
     RangeMinHash<uint64_t> localSketch(globalSketch.sketch_size());
+    
+    // open MPI file for parallel I/O
+    error = MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    if (error != MPI_SUCCESS) {
+	    fprintf(stderr, "\n*** Unable to open input file '%s'\n\n", filename);
+    }
 
+    // get the size of the file
+    error = MPI_File_get_size(file, &fileSize);
+    if (error != MPI_SUCCESS) {
+	    fprintf(stderr, "\n*** Unable to get size of file '%s'\n\n", filename);
+    }
+
+    minChunks = fileSize / INT_MAX + (fileSize % INT_MAX != 0);
+    if(debug) std::cout << "Minimum chunks = " << minChunks << std::endl;
+    if(minChunks <= nProcs) {
+	    chunksPerProc = 1;
+	    parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
+	    ioTime = MPI_Wtime();
+	    sketchKmers(a, localCount, k, localSketch, id);
+	    free(a);
+	    sketchTime = MPI_Wtime();
+    } else {
+	    ioTime = 0;
+	    sketchTime = 0;
+	    chunksPerProc = minChunks / nProcs + (minChunks % INT_MAX != 0);
+	    for(int chunk = id*chunksPerProc; chunk < (id+1)*chunksPerProc; ++chunk) {
+		    tempTime = MPI_Wtime();
+		    parallelReadArray(filename.c_str(), &a, &localCount, chunk, nProcs*chunksPerProc, k);
+		    ioTime += MPI_Wtime() - tempTime;
+		    sketchKmers(a, localCount, k, localSketch, id);
+		    free(a);
+		    sketchTime += MPI_Wtime() - tempTime;
+	    }
+    }
+	/*
 	int readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id, nProcs, k);
 	if(debug) std::cout << "parallelReadArray() done" << std::endl;
-	/*if(readStatus) {
-		fprintf(stderr, "\n*** Unable to allocate memory to read the array.\n\n");
-		return;
-	}*/
+	if(readStatus) {
+		ioTime = 0;
+		sketchTime = 0;
+		if(debug) std::cout << "Process " << id << ": splitting into chunks." << std::endl;
+		int newChunks = 2;
+		for(int chunkIndex = 0; chunkIndex < newChunks; ++chunkIndex) {
+			tempTime = MPI_Wtime();
+			readStatus = parallelReadArray(filename.c_str(), &a, &localCount, id+newChunks, newChunks*nProcs, k);
+			if(readStatus) {
+				fprintf(stderr, "\n*** Unable to allocate memory to read the array.\n\n");
+			return;
+			}
+			ioTime += MPI_Wtime() - tempTime;
+			sketchKmers(a, localCount, k, localSketch, id);
+			free(a);
+			sketchTime += MPI_Wtime() - tempTime;
+		}
+	} else {
+		ioTime = MPI_Wtime();
+		sketchKmers(a, localCount, k, localSketch, id);
+		free(a);
+		sketchTime = MPI_Wtime();
+	}
+	*/ /*
 	//TODO: forcibly test if this actually works, at least if done once
 	ioTime = 0;
 	sketchTime = 0;
@@ -78,16 +135,19 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, 
 		free(a);
     	sketchTime = MPI_Wtime();
 	}
+	*/
 
-	// ioTime = MPI_Wtime();
-	// sketchKmers(a, localCount, k, localSketch, id);
-	// free(a);
-	// sketchTime = MPI_Wtime();
+	/*
+	ioTime = MPI_Wtime();
+	sketchKmers(a, localCount, k, localSketch, id);
+	free(a);
+	sketchTime = MPI_Wtime();
+	*/
 
 	if(debug) std::cout << "Process " << id << ": Local sketching complete." << std::endl;
 
-    // combineSketches(localSketch, globalSketch, nProcs, id); // TODO: pick which approach is what we want
-	sketchReduction(localSketch, globalSketch, id, nProcs);
+    combineSketches(localSketch, globalSketch, nProcs, id); // TODO: pick which approach is what we want
+	//sketchReduction(localSketch, globalSketch, id, nProcs);
 	if(debug) std::cout << "Process " << id << ": Sketches combined." << std::endl;
 
     gatherTime = MPI_Wtime();
@@ -96,7 +156,7 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, 
 
     if (id == 0) {
 		std::cout << "For file " << filename << " with " << nProcs << " processes: " << std::endl;
-		std::cout << " * used " << readChunks << " chunks to read file per process." << std::endl;
+    	std::cout << " * Used " << chunksPerProc << "  chunks per process" << std::endl;
     	std::cout << " * Threshold calculation time = " << (threshTime - startTime) << std::endl;
     	std::cout << " * Parallel read from file time = " << (ioTime - threshTime) << std::endl;
     	std::cout << " * Local sketching time = \t" << (sketchTime - ioTime) << std::endl;
@@ -118,11 +178,11 @@ void sketchFromFile(std::string filename, RangeMinHash<uint64_t>& globalSketch, 
  */
 int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs, unsigned k)
 {
-	int offset, chunkSize, remainder;
 	int error;
 	MPI_File file;
 	MPI_Status status;
-	MPI_Offset fileSize;
+	int chunkSize;
+	MPI_Offset fileSize, offset, remainder;
 	char *buffer;
 
 	// open MPI file for parallel I/O
@@ -151,13 +211,27 @@ int parallelReadArray(const char *fileName, char **a, int *n, int id, int nProcs
 		chunkSize += k + 1;
 	}
 
+	if(chunkSize < 0) {
+		fprintf(stderr, "Process %3d: chunkSize < 0\n", id);
+		return 1;
+	}
+
 	buffer = (char *)calloc(chunkSize + 1, sizeof(char));
 	if (buffer == NULL)
 	{
+		fprintf(stderr, "\n*** Unable to allocate memory to read \n\n");
 		return 1;
 	}
-	MPI_File_read_at(file, offset, buffer, chunkSize, MPI_CHAR, &status);
-	if(debug) std::cout << "Process " << id << ": file size = " << fileSize << " and chunk size = " << chunkSize << std::endl;
+	if(debug) std::cout << "Process " << id << ": file = " << file << ", offset = " << offset << ", chunkSize = " << chunkSize << std::endl;
+	error = MPI_File_read_at(file, offset, buffer, chunkSize, MPI_CHAR, &status);
+	if (error != MPI_SUCCESS) {
+		fprintf(stderr, "\n*** Unable to read from input file\n\n");
+		char error_string[BUFSIZ];
+                int length_of_error_string;
+                MPI_Error_string(error, error_string, &length_of_error_string);
+                fprintf(stderr, "%3d: %s\n", id, error_string);
+	} else {
+	}
 
 	MPI_File_close(&file);
 
@@ -227,10 +301,8 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
 				std::string twin = reversecomplement(kmer);
 				if (twin < kmer) {
-					if(kmer_int(twin.c_str()) == 0) std::cout << "Process " << id << ": found k-mer that hashes to 0." << std::endl;
 					kmerSketch.addh(kmer_int(twin.c_str()));
 				} else {
-					if(kmer_int(kmer.c_str()) == 0) std::cout << "Process " << id << ": found k-mer that hashes to 0." << std::endl;
 					kmerSketch.addh(kmer_int(kmer.c_str()));
 				}
 				kmer = kmer.substr(1, k-1) + a[i]; // start at 1 and get k-1 chars
@@ -239,6 +311,16 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
 			kmer = "";
 		}
 	}
+	if(debug) {
+		if (kmerSketch.size() == 0) {
+			int counter = 0;
+			std::cout << "Process " << id << " has 0 kmers" << std::endl;
+		for(int i = 0; i < numValues; ++i) if(!(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G')) ++counter;
+			std::cout << "Process " << id << " has " << counter << " non-bases " <<  std::endl;
+		}
+		std::cout << "Process " << id << ": first char = " << (a[0] == 0) << std::endl;
+	}
+	if(debug) std::cout << "Process " << id << ": size = " << kmerSketch.size() << std::endl;
 }
 
 /* combineSketches adds the kmers in the data read to a Minhash sketch
@@ -270,6 +352,7 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 	}
 
 	if(debug) {
+		std::cout << "Process " << id << ": " << localSketch.size() << std::endl;
 		if(localSketch.min_element() == 0) {
 			std::cout << "Process " << id << ": minimum element is 0"<< std::endl;
 		} else {
@@ -294,14 +377,18 @@ void combineSketches(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 		}
 	}
 
-	delete [] global_data;
+	free(global_data);
 }
 
 void sketchReduction(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t> & globalSketch, int id, int nProcs) {
 	int n;
 	int n_vals = localSketch.sketch_size();
 	vector<uint64_t> local_data = localSketch.mh2vec();
-	uint64_t * buffer = (uint64_t *)calloc(n_vals, sizeof(uint64_t));
+	uint64_t * buffer = NULL; // (uint64_t *)calloc(n_vals, sizeof(uint64_t));
+	if (id%2 == 0) {
+		buffer = (uint64_t *)calloc(n_vals, sizeof(uint64_t));
+		if(buffer == NULL) { std::cout << "Process " << id << " unable to receive sketches." << std::endl; return; }
+	}
 	for(n = 1; n < nProcs; n *= 2) {
 		// TODO: id receives, id+n sends data
 		if( id%(n*2) == 0 && id+n < nProcs) {
@@ -317,6 +404,7 @@ void sketchReduction(RangeMinHash<uint64_t> & localSketch, RangeMinHash<uint64_t
 			MPI_Send(local_data.data(), local_data.size(), MPI_UNSIGNED_LONG_LONG, id-n, 0, MPI_COMM_WORLD);
 		}
 	}
+	free(buffer);
 
 	if(id == 0) {
 		globalSketch += localSketch;
