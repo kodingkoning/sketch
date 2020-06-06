@@ -226,6 +226,9 @@ inline uint64_t kmer_int(const char *s) {
  */
 void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & kmerSketch, int id) {
 	std::string kmer = "";
+	std::string twin = "";
+	uint64_t hash_val;
+	common::WangHash hf_;
 	for(int i = 0; i < numValues; ++i) {
 		if(a[i] == 'A' || a[i] == 'T' || a[i] == 'C' || a[i]== 'G') {
 			if(kmer.length() < k) {
@@ -233,11 +236,14 @@ void sketchKmers(char* a, int numValues, unsigned k, RangeMinHash<uint64_t> & km
 			}
 			if(kmer.length() == k) {
 				// TODO: check against threshold for the hash values (will need to send the hash value to the sketch for confirmation)
-				std::string twin = reversecomplement(kmer);
+				twin = reversecomplement(kmer);
 				if (twin < kmer) {
-					kmerSketch.addh(kmer_int(twin.c_str()));
+					hash_val = hf_(kmer_int(twin.c_str()));
 				} else {
-					kmerSketch.addh(kmer_int(kmer.c_str()));
+					hash_val = hf_(kmer_int(kmer.c_str()));
+				}
+				if(hash_val < kmerSketch.max_element()) {
+					kmerSketch.add(hash_val);
 				}
 				kmer = kmer.substr(1, k-1) + a[i]; // start at 1 and get k-1 chars
 			}
