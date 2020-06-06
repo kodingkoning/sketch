@@ -1,3 +1,4 @@
+shares 50 7-mers with test a and then has 25 unique values
 AAAGTAC
 TGAGAAA
 GGACCAC
